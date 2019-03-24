@@ -1,5 +1,6 @@
 #include<stdio.h>
 #include<stdlib.h>
+#include<string.h>
 
 #include<format.h>
 #include<utilities.h>
@@ -119,19 +120,62 @@ void decodeSOF(JPG* jpg){
 
 
 void decodeDHT(JPG* jpg){
-  unsigned char* block = jpg->pos;
-  unsigned int remaining = read16(block);
-  if(block + remaining >= jpg->end) THROW(SYNTAX_ERROR);
-
-  static unsigned char counts[16];
-
-  while(remaining > 16){
-    unsigned char val = block[0];
+  unsigned char* pos = jpg->pos;
+  unsigned int block_len = read16(pos);
+  unsigned char *block_end = pos + block_len;
+  if(block_end >= jpg->end) THROW(SYNTAX_ERROR);
+  pos += 2;
+  
+  while(pos < block_end){
+    unsigned char val = pos[0];
     if (val & 0xEC) THROW(SYNTAX_ERROR);
     if (val & 0x02) THROW(UNSUPPORTED_ERROR);
-    val = (val | (val >> 3)) & 3;
-    for (int code_length = 1; code_length <= 16; code_length++)
+    unsigned char table_id = (val | (val >> 3)) & 3; // AC and DC
+    DhtVlc *vlc = &jpg->vlc_tables[table_id][0];
+
+    unsigned char *tuple = pos + 17;
+    int remain = 65536, spread = 65536;
+    for (int code_len = 1; code_len <= 16; code_len++){
+      spread >>= 1;
+      int count = pos[code_len];
+      if (!count) continue;
+      if (tuple + count > block_end) THROW(SYNTAX_ERROR);
       
+      remain -= count << (16 - code_len);
+      if (remain < 0) THROW(SYNTAX_ERROR);
+      for(int i = 0; i < count; i++, tuple++){
+	for(int j = spread; j; j--, vlc++){
+	  vlc->num_bits = (unsigned char) code_len;
+	  vlc->tuple = *tuple;
+	}
+      }
+    }
+    while(remain--){
+      vlc->num_bits = 0;
+      vlc++;
+    }
+    pos = tuple;
   }
-}
   
+  if (pos != block_end) THROW(SYNTAX_ERROR);
+  jpg->pos = block_end;
+}
+
+
+void decodeDQT(JPG *jpg){
+  unsigned int block_len = read16(jpg->pos);
+  unsigned char *block_end = jpg->pos + block_len;
+  if (block_end >= jpg->end) THROW(SYNTAX_ERROR);
+  unsigned char *pos = jpg->pos + 2;
+  pos += 2;
+
+  while(pos + 65 < block_end){
+    unsigned char table_id = pos[0];
+    if (table_id & 0xFC) THROW(SYNTAX_ERROR);
+    unsigned char *table = &jpg->dq_tables[table_id][0];
+    memcpy(table, pos+1, 64);
+    pos += 65;
+  }
+  if (pos != block_end) THROW(SYNTAX_ERROR);
+  jpg->pos = block_end;
+}

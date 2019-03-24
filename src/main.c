@@ -38,8 +38,8 @@ int main(int argc, char** argv){
     //printf("%x\n", (unsigned int)(jpg->pos - jpg->buf));
     switch(jpg->pos[-1]) {
     case 0xC0: printf("DecodeSOF()\n");decodeSOF(jpg); break;
-    case 0xC4: printf("DecodeDHT()\n"); skipBlock(jpg);  break;
-    case 0xDB: printf("DecodeDQT()\n"); skipBlock(jpg);  break;
+    case 0xC4: printf("DecodeDHT()\n"); decodeDHT(jpg);  break;
+    case 0xDB: printf("DecodeDQT()\n"); decodeDQT(jpg);  break;
     case 0xDD: printf("DecodeDRI()\n"); skipBlock(jpg);  break;
     case 0xDA: printf("DecodeScan()\n"); skipBlock(jpg); break;
     case 0xFE: skipBlock(jpg); break;

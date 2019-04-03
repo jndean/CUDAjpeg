@@ -13,7 +13,7 @@ rm       = rm -f
 CC       = gcc
 CFLAGS   = -std=c99 -Wall -I${INCDIR}
 
-default: main.o utilities.o format.o
+default: main.o utilities.o format.o huffman.o
 	gcc ${CFLAGS} $^ -o ${TARGET}
 
 %.o: $(SRCDIR)/%.c $(INCDIR)/%.h

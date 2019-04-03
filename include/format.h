@@ -11,10 +11,11 @@ typedef struct _DhtVlc
 typedef struct _ColourChannel
 {
   int id;
-  int qtid, acit, dcid;
+  int qt_id, ac_id, dc_id;
   int width, height;
   int samples_x, samples_y, stride;
   unsigned char *pixels;
+  int dc_cumulative_val;
 } ColourChannel;
 
 
@@ -42,6 +43,13 @@ typedef struct _JPG
   unsigned char dq_tables[4][64];
   // Bit flags for presence and use of each table //
   //int dq_table_available, dq_table_used;
+  // RS interval //
+  int restart_interval;
+  // Buffer bits already read during huffman decode //
+  unsigned int bufbits;
+  unsigned char num_bufbits;
+  // Working space for current block decode //
+  int block_space[64];
 } JPG;
 
   
@@ -51,6 +59,8 @@ JPG* newJPG(const char* filename);
 void decodeSOF(JPG* jpg);
 void decodeDHT(JPG* jpg);
 void decodeDQT(JPG *jpg);
+void decodeDRI(JPG *jpg);
+void decodeSOS(JPG* jpg);
 
 
 #endif // FORMAT_H //

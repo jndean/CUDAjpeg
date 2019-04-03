@@ -24,7 +24,6 @@ int main(int argc, char** argv){
 
   // Main format block parsing loop //
   while(!jpg->error){
-    
     if (jpg->pos > jpg->end - 2) {
       jpg->error = SYNTAX_ERROR;
       break;
@@ -40,9 +39,10 @@ int main(int argc, char** argv){
     case 0xC0: printf("DecodeSOF()\n");decodeSOF(jpg); break;
     case 0xC4: printf("DecodeDHT()\n"); decodeDHT(jpg);  break;
     case 0xDB: printf("DecodeDQT()\n"); decodeDQT(jpg);  break;
-    case 0xDD: printf("DecodeDRI()\n"); skipBlock(jpg);  break;
-    case 0xDA: printf("DecodeScan()\n"); skipBlock(jpg); break;
+    case 0xDD: printf("DecodeDRI()\n"); decodeDRI(jpg);  break;
+    case 0xDA: printf("DecodeScan()\n"); decodeSOS(jpg); break;
     case 0xFE: skipBlock(jpg); break;
+    case 0xD9: printf("D9\n"); break;
     default:
       if((jpg->pos[-1] & 0xF0) == 0xE0) skipBlock(jpg);
       else jpg->error = SYNTAX_ERROR;

@@ -4,6 +4,7 @@
 
 #include<format.h>
 #include<utilities.h>
+#include<huffman.h>
 
 JPG* newJPG(const char* filename){
   JPG* out = calloc(1, sizeof(JPG));
@@ -39,8 +40,9 @@ JPG* newJPG(const char* filename){
   return NULL;
 }
 
+
 void delJPG(JPG* jpg){
-  if (NULL != jpg->buf) free(jpg->buf);
+  if (jpg->buf) free(jpg->buf);
   int i; ColourChannel *c;
   for(i = 0, c = jpg->channels; i < 3; i++, c++)
     if (c->pixels) free(c->pixels);
@@ -76,9 +78,9 @@ void decodeSOF(JPG* jpg){
     chan->id = block[0];
     chan->samples_x = block[1] >> 4;
     chan->samples_y = block[1] & 0xF;
-    chan->qtid = block[2];
+    chan->qt_id = block[2];
     
-    if(!chan->samples_x || !chan->samples_y || chan->qtid > 3)
+    if(!chan->samples_x || !chan->samples_y || chan->qt_id > 3)
       THROW(SYNTAX_ERROR);
     if((chan->samples_x & (chan->samples_x - 1)) ||
        (chan->samples_y & (chan->samples_y - 1)))
@@ -162,14 +164,22 @@ void decodeDHT(JPG* jpg){
 }
 
 
+void decodeDRI(JPG *jpg){
+  unsigned int block_len = read16(jpg->pos);
+  unsigned char *block_end = jpg->pos + block_len;
+  if ((block_len < 2) || (block_end >= jpg->end)) THROW(SYNTAX_ERROR);
+  jpg->restart_interval = read16(jpg->pos + 2);
+  jpg->pos = block_end; 
+}
+
+
 void decodeDQT(JPG *jpg){
   unsigned int block_len = read16(jpg->pos);
   unsigned char *block_end = jpg->pos + block_len;
   if (block_end >= jpg->end) THROW(SYNTAX_ERROR);
   unsigned char *pos = jpg->pos + 2;
-  pos += 2;
 
-  while(pos + 65 < block_end){
+  while(pos + 65 <= block_end){
     unsigned char table_id = pos[0];
     if (table_id & 0xFC) THROW(SYNTAX_ERROR);
     unsigned char *table = &jpg->dq_tables[table_id][0];
@@ -178,4 +188,63 @@ void decodeDQT(JPG *jpg){
   }
   if (pos != block_end) THROW(SYNTAX_ERROR);
   jpg->pos = block_end;
+}
+
+
+void decodeSOS(JPG* jpg){
+  unsigned char *pos = jpg->pos;
+  unsigned int header_len = read16(pos);
+  if (pos + header_len >= jpg->end) THROW(SYNTAX_ERROR);
+  pos += 2;
+
+  if (header_len < (4 + 2 * jpg->num_channels)) THROW(SYNTAX_ERROR);
+  if (*(pos++) != jpg->num_channels) THROW(UNSUPPORTED_ERROR);
+  int i; ColourChannel *channel;
+  for(i = 0, channel=jpg->channels; i<jpg->num_channels; i++, channel++, pos+=2){
+    if (pos[0] != channel->id) THROW(SYNTAX_ERROR);
+    if (pos[1] & 0xEE) THROW(SYNTAX_ERROR);
+    channel->dc_id = pos[1] >> 4;
+    channel->ac_id = (pos[1] & 1) | 2;
+  }
+  if (pos[0] || (pos[1] != 63) || pos[2]) THROW(UNSUPPORTED_ERROR);
+  pos = jpg->pos + 2 + header_len;
+
+
+  int restart_interval = jpg->restart_interval;
+  int restart_count = restart_interval;
+  int next_restart_index = 0;
+  
+  // Loop over all blocks
+  for (int block_y = 0; block_y < jpg->num_blocks_y; block_y++){
+    for (int block_x = 0; block_x < jpg->num_blocks_x; block_x++){
+
+      // Loop over all channels //
+      for (i = 0, channel = jpg->channels; i < jpg->num_channels; i++, channel++){
+
+	// Loop over samples in block //
+	for (int sample_y = 0; sample_y < channel->samples_y; ++sample_y){
+	  for (int sample_x = 0; sample_x < channel->samples_x; ++sample_x){
+	    int out_pos = ((block_y * channel->samples_y + sample_y) * channel->stride
+			   + block_x * channel->samples_x + sample_x) << 3;
+	    decodeBlock(jpg, channel, &channel->pixels[out_pos]);
+	    if (jpg->error) return;
+	  }
+	}
+      }
+
+      if (restart_interval && !(--restart_count)){
+	// Byte align //
+	jpg->num_bufbits &= 0xF8;
+	i = getBits(jpg, 16);
+	if (((i & 0xFFF8) != 0xFFD0) || ((i & 7) != next_restart_index))
+	  THROW(SYNTAX_ERROR);
+	next_restart_index = (next_restart_index + 1) & 7;
+	restart_count = restart_interval;
+	for (i = 0; i < 3; i++)
+	  jpg->channels[i].dc_cumulative_val = 0;
+      }
+    }
+  }
+
+  
 }

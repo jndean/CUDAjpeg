@@ -12,25 +12,26 @@ int showBits(JPG* jpg, int num_bits){
   if(!num_bits) return 0;
 
   while (jpg->num_bufbits < num_bits){
-    if(jpg->pos >= jpg->end)
-      goto overflow_error;
+    if(jpg->pos >= jpg->end){
+      jpg->bufbits = (jpg->bufbits << 8) | 0xFF;
+      jpg->num_bufbits += 8;
+      continue;
+    }
     newbyte = *jpg->pos++;
     jpg->bufbits = (jpg->bufbits << 8) | newbyte;
     jpg->num_bufbits += 8;
     if (newbyte != 0xFF)
       continue;
 	
-    // Handle byte stuffing //
     if(jpg->pos >= jpg->end)
       goto overflow_error;
+    
+    // Handle byte stuffing //
     unsigned char follow_byte = *jpg->pos++;
     switch (follow_byte){
     case 0x00:
     case 0xFF:
-      break;
     case 0xD9:
-      printf("two\n");
-      //goto overflow_error;
       break;
     default:
       if ((follow_byte & 0xF8) != 0xD0){
@@ -47,21 +48,16 @@ int showBits(JPG* jpg, int num_bits){
 
  overflow_error:
   printf("Huffman decode overflow?\n");
-  printf("%p, %p\n", jpg->pos, jpg->end);
   jpg->error = SYNTAX_ERROR;
   return 0;
 }
 
 
+// Show the bits AND move past them //
 int getBits(JPG* jpg, int num_bits){
   int res = showBits(jpg, num_bits);
   jpg->num_bufbits -= num_bits;
   return res;
-}
-
-
-void byteAlign(JPG* jpg){
-  jpg->num_bufbits &= 0xF8;
 }
 
 

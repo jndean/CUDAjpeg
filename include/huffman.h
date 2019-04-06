@@ -3,9 +3,8 @@
 
 int showBits(JPG* jpg, int num_bits);
 int getBits(JPG* jpg, int num_bits);
-void byteAlign(JPG* jpg);
-
 int getVLC(JPG* jpg, DhtVlc* vlc, unsigned char* code);
+
 void decodeBlock(JPG* jpg, ColourChannel* c, unsigned char* out);
 
 #endif // HUFFMAN_H //

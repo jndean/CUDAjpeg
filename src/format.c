@@ -207,7 +207,7 @@ void decodeSOS(JPG* jpg){
     channel->ac_id = (pos[1] & 1) | 2;
   }
   if (pos[0] || (pos[1] != 63) || pos[2]) THROW(UNSUPPORTED_ERROR);
-  pos = jpg->pos + 2 + header_len;
+  pos = jpg->pos = jpg->pos + header_len;
 
 
   int restart_interval = jpg->restart_interval;
@@ -234,8 +234,8 @@ void decodeSOS(JPG* jpg){
       }
 
       if (restart_interval && !(--restart_count)){
-	// Byte align //
 	printf("Doing a restart\n");
+	// Byte align //
 	jpg->num_bufbits &= 0xF8;
 	i = getBits(jpg, 16);
 	if (((i & 0xFFF8) != 0xFFD0) || ((i & 7) != next_restart_index))

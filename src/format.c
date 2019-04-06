@@ -3,8 +3,7 @@
 #include<string.h>
 
 #include<format.h>
-#include<utilities.h>
-#include<huffman.h>
+
 
 JPG* newJPG(const char* filename){
   JPG* out = calloc(1, sizeof(JPG));
@@ -48,6 +47,33 @@ void delJPG(JPG* jpg){
     if (c->pixels) free(c->pixels);
   if(jpg->pixels) free(jpg->pixels);
   free(jpg);
+}
+
+
+void writeJPG(JPG* jpg, const char* filename){
+  FILE* f = fopen(filename, "wb");
+   if (!f) {
+     printf("Couldn't open output file %s\n", filename);
+     return;
+   }
+   fprintf(f, "P%d\n%d %d\n255\n",
+	   (jpg->num_channels > 1) ? 6 : 5,
+	   jpg->width, jpg->height);
+   fwrite((jpg->num_channels == 1) ? jpg->channels[0].pixels : jpg->pixels,
+	  1,
+	  jpg->width * jpg->height * jpg->num_channels,
+	  f);
+   fclose(f);
+}
+
+
+unsigned short read16(const unsigned char *pos) {
+    return (pos[0] << 8) | pos[1];
+}
+
+
+void skipBlock(JPG* jpg){
+  jpg->pos += read16(jpg->pos);
 }
 
 
@@ -188,64 +214,4 @@ void decodeDQT(JPG *jpg){
   }
   if (pos != block_end) THROW(SYNTAX_ERROR);
   jpg->pos = block_end;
-}
-
-
-void decodeSOS(JPG* jpg){
-  unsigned char *pos = jpg->pos;
-  unsigned int header_len = read16(pos);
-  if (pos + header_len >= jpg->end) THROW(SYNTAX_ERROR);
-  pos += 2;
-
-  if (header_len < (4 + 2 * jpg->num_channels)) THROW(SYNTAX_ERROR);
-  if (*(pos++) != jpg->num_channels) THROW(UNSUPPORTED_ERROR);
-  int i; ColourChannel *channel;
-  for(i = 0, channel=jpg->channels; i<jpg->num_channels; i++, channel++, pos+=2){
-    if (pos[0] != channel->id) THROW(SYNTAX_ERROR);
-    if (pos[1] & 0xEE) THROW(SYNTAX_ERROR);
-    channel->dc_id = pos[1] >> 4;
-    channel->ac_id = (pos[1] & 1) | 2;
-  }
-  if (pos[0] || (pos[1] != 63) || pos[2]) THROW(UNSUPPORTED_ERROR);
-  pos = jpg->pos = jpg->pos + header_len;
-
-
-  int restart_interval = jpg->restart_interval;
-  int restart_count = restart_interval;
-  int next_restart_index = 0;
-  
-  // Loop over all blocks
-  for (int block_y = 0; block_y < jpg->num_blocks_y; block_y++){
-    for (int block_x = 0; block_x < jpg->num_blocks_x; block_x++){
-
-      // Loop over all channels //
-      for (i = 0, channel = jpg->channels; i < jpg->num_channels; i++, channel++){
-
-	// Loop over samples in block //
-	for (int sample_y = 0; sample_y < channel->samples_y; ++sample_y){
-	  for (int sample_x = 0; sample_x < channel->samples_x; ++sample_x){
-	    int out_pos = ((block_y * channel->samples_y + sample_y) * channel->stride
-			   + block_x * channel->samples_x + sample_x) << 3;
-	    decodeBlock(jpg, channel, &channel->pixels[out_pos]);
-	    printf("Done %d/%d, %d/%d \n", block_x, jpg->num_blocks_x, block_y, jpg->num_blocks_y);
-	    if (jpg->error) return;
-	  }
-	}
-      }
-
-      if (restart_interval && !(--restart_count)){
-	printf("Doing a restart\n");
-	// Byte align //
-	jpg->num_bufbits &= 0xF8;
-	i = getBits(jpg, 16);
-	if (((i & 0xFFF8) != 0xFFD0) || ((i & 7) != next_restart_index))
-	  THROW(SYNTAX_ERROR);
-	next_restart_index = (next_restart_index + 1) & 7;
-	restart_count = restart_interval;
-	for (i = 0; i < 3; i++)
-	  jpg->channels[i].dc_cumulative_val = 0;
-      }
-    }
-  }
- 
 }

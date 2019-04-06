@@ -13,11 +13,11 @@ rm       = rm -f
 CC       = gcc
 CFLAGS   = -std=c99 -Wall -I${INCDIR}
 
-default: main.o utilities.o format.o huffman.o
+default: main.o format.o decodeScanCPU.o pixelTransformCPU.o
 	gcc ${CFLAGS} $^ -o ${TARGET}
 
 %.o: $(SRCDIR)/%.c $(INCDIR)/%.h
 	gcc $(CFLAGS) -c $< -o $@
 
 clean:
-	rm *.o *~
+	rm *.o *~ src/*~ include/*~

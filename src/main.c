@@ -1,11 +1,9 @@
 #include<stdio.h>
 #include<stdlib.h>
-#include<string.h>
 
-#include<utilities.h>
 #include<format.h>
-
-
+#include<decodeScanCPU.h>
+#include<pixelTransformCPU.h>
 
 
 int main(int argc, char** argv){
@@ -34,22 +32,24 @@ int main(int argc, char** argv){
     }
     
     jpg->pos += 2;
-    //printf("%x\n", (unsigned int)(jpg->pos - jpg->buf));
     switch(jpg->pos[-1]) {
-    case 0xC0: printf("DecodeSOF()\n");decodeSOF(jpg); break;
-    case 0xC4: printf("DecodeDHT()\n"); decodeDHT(jpg);  break;
-    case 0xDB: printf("DecodeDQT()\n"); decodeDQT(jpg);  break;
-    case 0xDD: printf("DecodeDRI()\n"); decodeDRI(jpg);  break;
-    case 0xDA: printf("DecodeScan()\n"); decodeSOS(jpg); break;
+    case 0xC0: decodeSOF(jpg); break;
+    case 0xC4: decodeDHT(jpg); break;
+    case 0xDB: decodeDQT(jpg); break;
+    case 0xDD: decodeDRI(jpg); break;
+    case 0xDA: decodeScanCPU(jpg); break;
     case 0xFE: skipBlock(jpg); break;
-    case 0xD9: printf("D9\n"); break;
+    case 0xD9: break;
     default:
       if((jpg->pos[-1] & 0xF0) == 0xE0) skipBlock(jpg);
       else jpg->error = SYNTAX_ERROR;
     }
 
     // Finished //
-    if (jpg->pos[-1] == 0xD9) break;
+    if (jpg->pos[-1] == 0xD9) {
+      upsampleAndColourTransform(jpg);
+      break;
+    }
   }
 
   if(jpg->error){
@@ -57,11 +57,11 @@ int main(int argc, char** argv){
     delJPG(jpg);
     return EXIT_FAILURE;
   }
+  printf("Successful jpeg decode\n");
 
-
-  
+  char* filename = (jpg->num_channels == 1) ? "outfile.pgm" : "outfile.ppm";
+  writeJPG(jpg, filename);
   
   delJPG(jpg);
-
   return EXIT_SUCCESS;
 }

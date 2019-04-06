@@ -78,9 +78,9 @@ void decodeSOF(JPG* jpg){
     chan->id = block[0];
     chan->samples_x = block[1] >> 4;
     chan->samples_y = block[1] & 0xF;
-    chan->qt_id = block[2];
+    chan->dq_id = block[2];
     
-    if(!chan->samples_x || !chan->samples_y || chan->qt_id > 3)
+    if(!chan->samples_x || !chan->samples_y || chan->dq_id > 3)
       THROW(SYNTAX_ERROR);
     if((chan->samples_x & (chan->samples_x - 1)) ||
        (chan->samples_y & (chan->samples_y - 1)))
@@ -227,6 +227,7 @@ void decodeSOS(JPG* jpg){
 	    int out_pos = ((block_y * channel->samples_y + sample_y) * channel->stride
 			   + block_x * channel->samples_x + sample_x) << 3;
 	    decodeBlock(jpg, channel, &channel->pixels[out_pos]);
+	    printf("Done %d/%d, %d/%d \n", block_x, jpg->num_blocks_x, block_y, jpg->num_blocks_y);
 	    if (jpg->error) return;
 	  }
 	}
@@ -234,6 +235,7 @@ void decodeSOS(JPG* jpg){
 
       if (restart_interval && !(--restart_count)){
 	// Byte align //
+	printf("Doing a restart\n");
 	jpg->num_bufbits &= 0xF8;
 	i = getBits(jpg, 16);
 	if (((i & 0xFFF8) != 0xFFD0) || ((i & 7) != next_restart_index))
@@ -245,6 +247,5 @@ void decodeSOS(JPG* jpg){
       }
     }
   }
-
-  
+ 
 }

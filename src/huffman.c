@@ -1,4 +1,5 @@
 #include<stdio.h>
+#include<string.h>
 
 #include<format.h>
 #include<huffman.h>
@@ -28,7 +29,9 @@ int showBits(JPG* jpg, int num_bits){
     case 0xFF:
       break;
     case 0xD9:
-      goto overflow_error;
+      printf("two\n");
+      //goto overflow_error;
+      break;
     default:
       if ((follow_byte & 0xF8) != 0xD0){
 	printf("The follow_byte case that doesn't have to be 0x00?\n");
@@ -44,6 +47,7 @@ int showBits(JPG* jpg, int num_bits){
 
  overflow_error:
   printf("Huffman decode overflow?\n");
+  printf("%p, %p\n", jpg->pos, jpg->end);
   jpg->error = SYNTAX_ERROR;
   return 0;
 }
@@ -79,10 +83,24 @@ int getVLC(JPG* jpg, DhtVlc* vlc_table, unsigned char* code){
 }
 
 
-void decodeBlock(JPG* jpg, ColourChannel* c, unsigned char* out){
+void decodeBlock(JPG* jpg, ColourChannel* channel, unsigned char* out){
   unsigned char code = 0;
   int value, coef = 0;
-  int* block = jpg->block;
+  int* block = jpg->block_space;
   memset(block, 0, 64 * sizeof(int));
-  
+
+  // Read DC value //
+  channel->dc_cumulative_val += getVLC(jpg, &jpg->vlc_tables[channel->dc_id][0], NULL);
+  block[0] = (channel->dc_cumulative_val) * jpg->dq_tables[channel->dq_id][0];
+  // Read  AC values //
+  do {
+    value = getVLC(jpg, &jpg->vlc_tables[channel->ac_id][0], &code);
+    if (!code) break; // EOB marker //
+    if (!(code & 0x0F) && (code != 0xF0)) THROW(SYNTAX_ERROR);
+    coef += (code >> 4) + 1;
+    if (coef > 63) THROW(SYNTAX_ERROR);
+    block[(int)deZigZag[coef]] = value * jpg->dq_tables[channel->dq_id][coef];
+  } while(coef < 63);
+
+  // ## Do iDCT here ## //
 }

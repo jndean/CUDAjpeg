@@ -102,7 +102,7 @@ void decodeBlock(JPG* jpg, ColourChannel* channel, unsigned char* out){
   for (coef = 0;  coef < 64;  coef += 8)
     iDCT_row(&block[coef]);
   for (coef = 0;  coef < 8;  ++coef)
-    iDCT_col(&block[coef], &out[coef], channel->stride);
+  iDCT_col(&block[coef], &out[coef], channel->stride);
 }
 
 

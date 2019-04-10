@@ -6,11 +6,12 @@
 
 
 JPG* newJPG(const char* filename){
+  FILE* f = NULL;
   JPG* out = calloc(1, sizeof(JPG));
   if (NULL == out) goto failure;
 
   // Read file //
-  FILE* f = fopen(filename, "r");
+  f = fopen(filename, "r");
   if (NULL == f) goto failure;
   fseek(f, 0, SEEK_END);
   unsigned int size = ftell(f);

@@ -7,6 +7,7 @@
 
 JPG* newJPG(const char* filename){
   FILE* f = NULL;
+  unsigned int size = 0;
   JPG* out = calloc(1, sizeof(JPG));
   if (NULL == out) goto failure;
 
@@ -14,7 +15,7 @@ JPG* newJPG(const char* filename){
   f = fopen(filename, "r");
   if (NULL == f) goto failure;
   fseek(f, 0, SEEK_END);
-  unsigned int size = ftell(f);
+  size = ftell(f);
   out->buf = malloc(size);
   if(NULL == out->buf) goto failure;
   fseek(f, 0, SEEK_SET);

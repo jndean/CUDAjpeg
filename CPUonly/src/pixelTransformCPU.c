@@ -6,8 +6,8 @@
 #include<pixelTransformCPU.h>
 
 
-unsigned char clip(const int x) {
-    return (x < 0) ? 0 : ((x > 0xFF) ? 0xFF : (unsigned char) x);
+inline unsigned char clip(const int x) {
+  return (x < 0) ? 0 : ((x > 0xFF) ? 0xFF : (unsigned char) x);
 }
 
 

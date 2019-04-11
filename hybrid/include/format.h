@@ -1,6 +1,9 @@
 #ifndef FORMAT_H
 #define FORMAT_H
 
+#include<time.h>
+
+
 #define NO_ERROR 0
 #define SYNTAX_ERROR 1
 #define UNSUPPORTED_ERROR 2
@@ -20,9 +23,10 @@ typedef struct _ColourChannel
   int id;
   int dq_id, ac_id, dc_id;
   int width, height;
-  int samples_x, samples_y, stride;
+  int samples_x, samples_y, stride, block_stride;
   unsigned char *pixels;
   int dc_cumulative_val;
+  int *working_space, *working_space_pos;
 } ColourChannel;
 
 
@@ -43,6 +47,7 @@ typedef struct _JPG
   unsigned int bufbits;
   unsigned char num_bufbits;
   int block_space[64];
+  clock_t time;
 } JPG;
 
 

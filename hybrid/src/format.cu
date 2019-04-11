@@ -34,6 +34,9 @@ __host__ JPG* newJPG(const char* filename){
   out->end = out->buf + size;
   out->pos = out->buf + 2;
   out->error = NO_ERROR;
+#ifdef DEBUG_TIMING
+  out->time = 0;
+#endif  
   return out;
   
  failure:
@@ -46,8 +49,10 @@ __host__ JPG* newJPG(const char* filename){
 __host__ void delJPG(JPG* jpg){
   if (jpg->buf) free(jpg->buf);
   int i; ColourChannel *c;
-  for(i = 0, c = jpg->channels; i < 3; i++, c++)
+  for(i = 0, c = jpg->channels; i < 3; i++, c++){
     if (c->pixels) free(c->pixels);
+    if (c->working_space) free(c->working_space);
+  }
   if(jpg->pixels) free(jpg->pixels);
   free(jpg);
 }
@@ -140,7 +145,9 @@ __host__ void decodeSOF(JPG* jpg){
 
     int chan_size = chan->stride * jpg->num_blocks_y * (chan->samples_y << 3);
     chan->pixels = (unsigned char*) malloc(chan_size);
-    if(!chan->pixels) THROW(OOM_ERROR);
+    chan->working_space = (int*) calloc(chan_size, sizeof(int));
+    chan->working_space_pos = chan->working_space;
+    if(!chan->pixels || !chan->working_space) THROW(OOM_ERROR);
   }
   if(jpg->num_channels == 3){
     jpg->pixels = (unsigned char*) malloc(jpg->width * jpg->height * 3);

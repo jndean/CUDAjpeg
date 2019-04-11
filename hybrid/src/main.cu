@@ -3,6 +3,7 @@
 #include<cuda_runtime.h>
 #include<time.h>
 
+
 #include<format.h>
 #include<decodeScanCPU.h>
 #include<pixelTransformCPU.h>
@@ -65,7 +66,8 @@ int main(int argc, char** argv){
     return EXIT_FAILURE;
   }
 
-  int i, n = 100;
+  clock_t cumulative_time = 0;
+  int i, n = 11;
   double total_time = 0;
   for (i=0; i<n; i++){
     int filename_id = 1 + (i % (argc - 1));
@@ -74,13 +76,25 @@ int main(int argc, char** argv){
     total_time += (clock() - start);
     if (!jpg)
       printf("Failed to open jpg %s\n", argv[1]);
+    cumulative_time += jpg->time;
     delJPG(jpg);
   }
 
-  printf("%0.3lfms per image\n", 1000.0 * total_time / (n * CLOCKS_PER_SEC));
+  double t_pi = 1000.0 * (double) total_time / (n * CLOCKS_PER_SEC);
+  printf("%0.3lfms per image\n", t_pi);
   
-  //char* filename = (jpg->num_channels == 1) ? "outfile.pgm" : "outfile.ppm";
-  //writeJPG(jpg, filename);
+  double t = 1000.0 * (double) cumulative_time / CLOCKS_PER_SEC / n;
+  printf("DEBUG_TIME %lfms, %0.4lf%%\n", t, 100*t/t_pi);
+  
+  char print = 1;
+  if(print){
+    JPG* jpg = openJPG(argv[1]);
+    if (jpg) {
+      const char* filename = (jpg->num_channels == 1) ? "outfile.pgm" : "outfile.ppm";
+      writeJPG(jpg, filename);
+    }
+    delJPG(jpg);
+  }
   
 
   return EXIT_SUCCESS;

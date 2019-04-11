@@ -1,9 +1,11 @@
 #include<stdio.h>
 #include<string.h>
+#include<time.h>
 
 #include<format.h>
 #include<decodeScanCPU.h>
 #include<pixelTransformCPU.h>
+#include<pixelTransformGPU.h>
 
 
 // This only shows the bits, but doesn't move past them //
@@ -79,11 +81,10 @@ __host__ int getVLC(JPG* jpg, DhtVlc* vlc_table, unsigned char* code){
 }
 
 
-__host__ void decodeBlock(JPG* jpg, ColourChannel* channel, unsigned char* out){
+__host__ void decodeBlock(JPG* jpg, ColourChannel* channel){
   unsigned char code = 0;
   int value, coef = 0;
-  int* block = jpg->block_space;
-  memset(block, 0, 64 * sizeof(int));
+  int* block = channel->working_space_pos;
 
   // Read DC value //
   channel->dc_cumulative_val += getVLC(jpg, &jpg->vlc_tables[channel->dc_id][0], NULL);
@@ -98,11 +99,7 @@ __host__ void decodeBlock(JPG* jpg, ColourChannel* channel, unsigned char* out){
     block[(int)deZigZag[coef]] = value * jpg->dq_tables[channel->dq_id][coef];
   } while(coef < 63);
 
-  // Invert the DCT //
-  for (coef = 0;  coef < 64;  coef += 8)
-    iDCT_row(&block[coef]);
-  for (coef = 0;  coef < 8;  ++coef)
-  iDCT_col(&block[coef], &out[coef], channel->stride);
+  channel->working_space_pos += 64;
 }
 
 
@@ -114,7 +111,8 @@ __host__ void decodeScanCPU(JPG* jpg){
 
   if (header_len < (4 + 2 * jpg->num_channels)) THROW(SYNTAX_ERROR);
   if (*(pos++) != jpg->num_channels) THROW(UNSUPPORTED_ERROR);
-  int i; ColourChannel *channel;
+  int i;
+  ColourChannel *channel;
   for(i = 0, channel=jpg->channels; i<jpg->num_channels; i++, channel++, pos+=2){
     if (pos[0] != channel->id) THROW(SYNTAX_ERROR);
     if (pos[1] & 0xEE) THROW(SYNTAX_ERROR);
@@ -139,10 +137,7 @@ __host__ void decodeScanCPU(JPG* jpg){
 	// Loop over samples in block //
 	for (int sample_y = 0; sample_y < channel->samples_y; ++sample_y){
 	  for (int sample_x = 0; sample_x < channel->samples_x; ++sample_x){
-	    
-	    int out_pos = ((block_y * channel->samples_y + sample_y) * channel->stride
-			   + block_x * channel->samples_x + sample_x) << 3;
-	    decodeBlock(jpg, channel, &channel->pixels[out_pos]);
+	    decodeBlock(jpg, channel);
 	    if (jpg->error) return;
 	  }
 	}
@@ -162,5 +157,50 @@ __host__ void decodeScanCPU(JPG* jpg){
       }
     }
   }
- 
+
+
+  /* -------------------- CPU iDCT -------------------- */
+
+  clock_t start_time = clock();
+
+  for (i = 0, channel = jpg->channels; i < jpg->num_channels; i++, channel++){
+    int *device_working_space;
+    int chan_size = channel->stride * jpg->num_blocks_y * (channel->samples_y << 3) * sizeof(int);
+    cudaMalloc(&device_working_space, chan_size);
+    cudaMemcpy(device_working_space, channel->working_space, chan_size, cudaMemcpyHostToDevice);
+    int num_blocks =
+      jpg->num_blocks_x * channel->samples_x * jpg->num_blocks_y * channel->samples_y;
+    int num_thread_blocks = num_blocks >> 2;
+    int num_threads_per_block = 32;
+    //iDCT_rows_GPU<<<num_thread_blocks, num_threads_per_block>>>(device_working_space);
+    cudaMemcpy(channel->working_space, device_working_space, chan_size, cudaMemcpyDeviceToHost);
+    cudaFree(device_working_space);
+    //cudaMemset(device_working_space, 0, chan_size);
+  }
+  
+  for (i = 0, channel = jpg->channels; i < jpg->num_channels; i++, channel++)
+    channel->working_space_pos = channel->working_space;
+  
+  for (int block_y = 0; block_y < jpg->num_blocks_y; block_y++){
+    for (int block_x = 0; block_x < jpg->num_blocks_x; block_x++){
+      for (i = 0, channel = jpg->channels; i < jpg->num_channels; i++, channel++){
+	for (int sample_y = 0; sample_y < channel->samples_y; ++sample_y){
+	  for (int sample_x = 0; sample_x < channel->samples_x; ++sample_x){
+	    int *block = channel->working_space_pos;
+	    int out_pos = ((block_y * channel->samples_y + sample_y) * channel->stride
+			   + block_x * channel->samples_x + sample_x) << 3;
+	    for (int coef = 0;  coef < 64;  coef += 8)
+	     iDCT_row(&block[coef]);
+	    for (int coef = 0;  coef < 8;  ++coef)
+	      iDCT_col(&block[coef], &channel->pixels[out_pos+coef], channel->stride);
+	    channel->working_space_pos += 64;
+	  }
+	}
+      }
+    }
+  }
+  
+  
+  clock_t end_time = clock();
+  jpg->time += end_time - start_time;
 }

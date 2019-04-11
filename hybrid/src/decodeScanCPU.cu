@@ -189,8 +189,8 @@ __host__ void decodeScanCPU(JPG* jpg){
 	    int *block = channel->working_space_pos;
 	    int out_pos = ((block_y * channel->samples_y + sample_y) * channel->stride
 			   + block_x * channel->samples_x + sample_x) << 3;
-	    for (int coef = 0;  coef < 64;  coef += 8)
-	     iDCT_row(&block[coef]);
+	    //for (int coef = 0;  coef < 64;  coef += 8)
+	    // iDCT_row(&block[coef]);
 	    for (int coef = 0;  coef < 8;  ++coef)
 	      iDCT_col(&block[coef], &channel->pixels[out_pos+coef], channel->stride);
 	    channel->working_space_pos += 64;

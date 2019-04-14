@@ -170,13 +170,14 @@ __host__ void decodeScanCPU(JPG* jpg){
     cudaMemcpy(device_working_space, channel->working_space, chan_size, cudaMemcpyHostToDevice);
     int num_blocks =
       jpg->num_blocks_x * channel->samples_x * jpg->num_blocks_y * channel->samples_y;
-    int num_thread_blocks = num_blocks >> 2;
-    int num_threads_per_block = 32;
-    //iDCT_rows_GPU<<<num_thread_blocks, num_threads_per_block>>>(device_working_space);
+    int num_thread_blocks = (num_blocks + 7) >> 3;
+    int num_threads_per_block = 64;
+    iDCT_rows_GPU<<<num_thread_blocks, num_threads_per_block>>>(device_working_space, num_blocks);
+    cudaDeviceSynchronize();
     cudaMemcpy(channel->working_space, device_working_space, chan_size, cudaMemcpyDeviceToHost);
     cudaFree(device_working_space);
     //cudaMemset(device_working_space, 0, chan_size);
-  }
+    }
   
   for (i = 0, channel = jpg->channels; i < jpg->num_channels; i++, channel++)
     channel->working_space_pos = channel->working_space;

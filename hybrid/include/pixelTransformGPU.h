@@ -10,7 +10,7 @@
 #define W7 565
 
 
-__global__ void iDCT_rows_GPU(int* D);
+__global__ void iDCT_rows_GPU(int* D, int num_DCT_blocks);
 __global__ void iDCT_cols_GPU(const int* D, unsigned char *out, int stride);
 /*__host__ void upsampleChannel(JPG* jpg, ColourChannel* channel);
   __host__ void upsampleAndColourTransform(JPG* jpg);*/

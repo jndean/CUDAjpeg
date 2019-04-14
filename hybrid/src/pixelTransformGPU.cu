@@ -12,10 +12,11 @@ __device__ inline unsigned char clip(const int x) {
 }
 
 
-__global__ void iDCT_rows_GPU(int* D) {
+__global__ void iDCT_rows_GPU(int* D, int num_DCT_blocks) {
 
-  // 4 DCT blocks per thread block, 8 threads per DCT block //
-  int block_index = (blockIdx.x << 2) + (threadIdx.x >> 3);
+  // 8 DCT blocks per thread block, 8 threads per DCT block //
+  int block_index = (blockIdx.x << 3) + (threadIdx.x >> 3);
+  if (block_index >= num_DCT_blocks) return;
   D += (block_index << 6) + ((threadIdx.x & 7) << 3);
     
     int x0, x1, x2, x3, x4, x5, x6, x7, x8;

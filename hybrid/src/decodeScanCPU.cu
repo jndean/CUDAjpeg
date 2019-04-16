@@ -165,23 +165,35 @@ __host__ void decodeScanCPU(JPG* jpg){
 
   for (i = 0, channel = jpg->channels; i < jpg->num_channels; i++, channel++){
     int *device_working_space;
-    int chan_size = channel->stride * jpg->num_blocks_y * (channel->samples_y << 3) * sizeof(int);
-    cudaMalloc(&device_working_space, chan_size);
-    cudaMemcpy(device_working_space, channel->working_space, chan_size, cudaMemcpyHostToDevice);
+    unsigned char *device_out_space;
+    int chan_size = channel->stride * jpg->num_blocks_y * (channel->samples_y << 3);
+    cudaMalloc(&device_working_space, chan_size * sizeof(int));
+    cudaMalloc(&device_out_space, chan_size * sizeof(unsigned char));
+    cudaMemcpy(device_working_space, channel->working_space,
+	       chan_size * sizeof(int), cudaMemcpyHostToDevice);
     int num_blocks =
       jpg->num_blocks_x * channel->samples_x * jpg->num_blocks_y * channel->samples_y;
     int num_thread_blocks = (num_blocks + 7) >> 3;
     int num_threads_per_block = 64;
     iDCT_rows_GPU<<<num_thread_blocks, num_threads_per_block>>>(device_working_space, num_blocks);
     cudaDeviceSynchronize();
-    cudaMemcpy(channel->working_space, device_working_space, chan_size, cudaMemcpyDeviceToHost);
+    iDCT_cols_GPU<<<num_thread_blocks, num_threads_per_block>>>(device_working_space,
+								device_out_space,
+								channel->stride,
+								channel->samples_x,
+								channel->samples_y,
+								num_blocks);
+    
+    cudaMemcpy(channel->pixels, device_out_space,
+    	       chan_size * sizeof(unsigned char), cudaMemcpyDeviceToHost);
     cudaFree(device_working_space);
+    cudaFree(device_out_space);
     //cudaMemset(device_working_space, 0, chan_size);
     }
   
-  for (i = 0, channel = jpg->channels; i < jpg->num_channels; i++, channel++)
+  /*for (i = 0, channel = jpg->channels; i < jpg->num_channels; i++, channel++)
     channel->working_space_pos = channel->working_space;
-  
+  int tmp = 0;
   for (int block_y = 0; block_y < jpg->num_blocks_y; block_y++){
     for (int block_x = 0; block_x < jpg->num_blocks_x; block_x++){
       for (i = 0, channel = jpg->channels; i < jpg->num_channels; i++, channel++){
@@ -190,6 +202,7 @@ __host__ void decodeScanCPU(JPG* jpg){
 	    int *block = channel->working_space_pos;
 	    int out_pos = ((block_y * channel->samples_y + sample_y) * channel->stride
 			   + block_x * channel->samples_x + sample_x) << 3;
+
 	    //for (int coef = 0;  coef < 64;  coef += 8)
 	    // iDCT_row(&block[coef]);
 	    for (int coef = 0;  coef < 8;  ++coef)
@@ -199,8 +212,8 @@ __host__ void decodeScanCPU(JPG* jpg){
 	}
       }
     }
-  }
-  
+    }
+  */
   
   clock_t end_time = clock();
   jpg->time += end_time - start_time;

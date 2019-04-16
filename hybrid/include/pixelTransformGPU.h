@@ -11,7 +11,11 @@
 
 
 __global__ void iDCT_rows_GPU(int* D, int num_DCT_blocks);
-__global__ void iDCT_cols_GPU(const int* D, unsigned char *out, int stride);
+__global__ void iDCT_cols_GPU(int* D,
+			     unsigned char *out,
+			     int stride,
+			     int samples_x, int samples_y,
+			     int num_DCT_blocks);
 /*__host__ void upsampleChannel(JPG* jpg, ColourChannel* channel);
   __host__ void upsampleAndColourTransform(JPG* jpg);*/
 

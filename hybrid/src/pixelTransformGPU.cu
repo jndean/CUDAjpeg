@@ -64,7 +64,32 @@ __global__ void iDCT_rows_GPU(int* D, int num_DCT_blocks) {
 }
 
 
-__global__ void iDCT_col_GPU(const int* D, unsigned char *out, int stride) {
+__global__ void iDCT_cols_GPU(int* D,
+			     unsigned char *out,
+			     int stride,
+			     int samples_x, int samples_y,
+			     int num_DCT_blocks) {
+
+  // 8 DCT blocks per thread block, 8 threads per DCT block //
+  int block_index = (blockIdx.x << 3) + (threadIdx.x >> 3);
+  if (block_index >= num_DCT_blocks) return;
+  D += (block_index << 6) + (threadIdx.x & 7);
+  
+  int blocks_per_outer_block = samples_x * samples_y;
+  int blocks_per_row = samples_y * (stride >> 3); 
+  int outer_block_y = block_index / blocks_per_row;
+  int remaining_blocks = block_index % blocks_per_row;
+  int outer_block_x = remaining_blocks / blocks_per_outer_block;
+  remaining_blocks = remaining_blocks % blocks_per_outer_block;
+  int inner_block_y = remaining_blocks / samples_x;
+  int inner_block_x = remaining_blocks % samples_x;
+  int block_x = outer_block_x * samples_x + inner_block_x;
+  int block_y = outer_block_y * samples_y + inner_block_y;
+  out += (block_y * stride + block_x) << 3;
+  out += threadIdx.x & 7;
+  
+  
+  
     int x0, x1, x2, x3, x4, x5, x6, x7, x8;
     if (!((x1 = D[8*4] << 8)
         | (x2 = D[8*6])

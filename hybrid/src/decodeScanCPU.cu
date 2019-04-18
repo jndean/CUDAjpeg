@@ -188,6 +188,30 @@ __host__ void decodeScanCPU(JPG* jpg){
     //cudaMemset(device_working_space, 0, chan_size);
     }
   
+  /*for (i = 0, channel = jpg->channels; i < jpg->num_channels; i++, channel++)
+    channel->working_space_pos = channel->working_space;
+  int tmp = 0;
+  for (int block_y = 0; block_y < jpg->num_blocks_y; block_y++){
+    for (int block_x = 0; block_x < jpg->num_blocks_x; block_x++){
+      for (i = 0, channel = jpg->channels; i < jpg->num_channels; i++, channel++){
+	for (int sample_y = 0; sample_y < channel->samples_y; ++sample_y){
+	  for (int sample_x = 0; sample_x < channel->samples_x; ++sample_x){
+	    int *block = channel->working_space_pos;
+	    int out_pos = ((block_y * channel->samples_y + sample_y) * channel->stride
+			   + block_x * channel->samples_x + sample_x) << 3;
+
+	    //for (int coef = 0;  coef < 64;  coef += 8)
+	    // iDCT_row(&block[coef]);
+	    for (int coef = 0;  coef < 8;  ++coef)
+	      iDCT_col(&block[coef], &channel->pixels[out_pos+coef], channel->stride);
+	    channel->working_space_pos += 64;
+	  }
+	}
+      }
+    }
+    }
+  */
+  
   clock_t end_time = clock();
   jpg->time += end_time - start_time;
 }

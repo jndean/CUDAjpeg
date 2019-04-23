@@ -107,7 +107,7 @@ __host__ void iDCT_col(const int* D, unsigned char *out, int stride) {
 }
 
 
-__host__ void upsampleChannel(JPG* jpg, ColourChannel* channel) {
+__host__ void upsampleChannel(JPGReader* jpg, ColourChannel* channel) {
     int x, y, xshift = 0, yshift = 0;
     unsigned char *out, *lout;
     while (channel->width < jpg->width) { channel->width <<= 1; ++xshift; }
@@ -127,7 +127,7 @@ __host__ void upsampleChannel(JPG* jpg, ColourChannel* channel) {
 }
 
 
-__host__ void upsampleAndColourTransform(JPG* jpg) {
+__host__ void upsampleAndColourTransform(JPGReader* jpg) {
   int i;
   ColourChannel* channel;
   for (i = 0, channel = &jpg->channels[0];  i < jpg->num_channels;  ++i, ++channel) {

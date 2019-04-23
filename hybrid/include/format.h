@@ -8,6 +8,7 @@
 #define SYNTAX_ERROR 1
 #define UNSUPPORTED_ERROR 2
 #define OOM_ERROR 3
+#define FILE_ERROR 4
 
 #define THROW(e) do { jpg->error = e; return; } while (0)
 
@@ -25,15 +26,16 @@ typedef struct _ColourChannel
   int width, height;
   int samples_x, samples_y, stride, block_stride;
   unsigned char *pixels;
+  int size;
   int dc_cumulative_val;
   int *working_space, *working_space_pos;
 } ColourChannel;
 
 
-typedef struct _JPG
+typedef struct _JPGReader
 {
   unsigned char *buf, *pos, *end;
-  unsigned int size;
+  unsigned int buf_size;
   unsigned short width, height;
   unsigned short num_blocks_x, num_blocks_y;
   unsigned short block_size_x, block_size_y;
@@ -41,6 +43,7 @@ typedef struct _JPG
   int error;
   ColourChannel channels[3];
   unsigned char *pixels;
+  int pixels_size;
   DhtVlc vlc_tables[4][65536];
   unsigned char dq_tables[4][64];
   int restart_interval;
@@ -48,19 +51,20 @@ typedef struct _JPG
   unsigned char num_bufbits;
   int block_space[64];
   clock_t time;
-} JPG;
+} JPGReader;
 
 
 __host__ unsigned short read16(const unsigned char *pos);
 
-__host__ void delJPG(JPG* jpg);
-__host__ JPG* newJPG(const char* filename);
-__host__ void writeJPG(JPG* jpg, const char* filename);
-__host__ void skipBlock(JPG* jpg);
-__host__ void decodeSOF(JPG* jpg);
-__host__ void decodeDHT(JPG* jpg);
-__host__ void decodeDQT(JPG *jpg);
-__host__ void decodeDRI(JPG *jpg);
+__host__ void delJPGReader(JPGReader* reader);
+__host__ JPGReader* newJPGReader();
+__host__ int openJPG(JPGReader* reader, const char *filename);
+__host__ void writeJPG(JPGReader* jpg, const char* filename);
+__host__ void skipBlock(JPGReader* jpg);
+__host__ void decodeSOF(JPGReader* jpg);
+__host__ void decodeDHT(JPGReader* jpg);
+__host__ void decodeDQT(JPGReader *jpg);
+__host__ void decodeDRI(JPGReader *jpg);
 
 static const char deZigZag[64] = {
   0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48,

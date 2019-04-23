@@ -9,7 +9,7 @@
 
 
 // This only shows the bits, but doesn't move past them //
-__host__ int showBits(JPG* jpg, int num_bits){
+__host__ int showBits(JPGReader* jpg, int num_bits){
   unsigned char newbyte;
   if(!num_bits) return 0;
 
@@ -56,14 +56,14 @@ __host__ int showBits(JPG* jpg, int num_bits){
 
 
 // Show the bits AND move past them //
-__host__ int getBits(JPG* jpg, int num_bits){
+__host__ int getBits(JPGReader* jpg, int num_bits){
   int res = showBits(jpg, num_bits);
   jpg->num_bufbits -= num_bits;
   return res;
 }
 
 
-__host__ int getVLC(JPG* jpg, DhtVlc* vlc_table, unsigned char* code){
+__host__ int getVLC(JPGReader* jpg, DhtVlc* vlc_table, unsigned char* code){
   int symbol = showBits(jpg, 16);
   DhtVlc vlc = vlc_table[symbol];
   if(!vlc.num_bits){
@@ -81,7 +81,7 @@ __host__ int getVLC(JPG* jpg, DhtVlc* vlc_table, unsigned char* code){
 }
 
 
-__host__ void decodeBlock(JPG* jpg, ColourChannel* channel){
+__host__ void decodeBlock(JPGReader* jpg, ColourChannel* channel){
   unsigned char code = 0;
   int value, coef = 0;
   int* block = channel->working_space_pos;
@@ -103,7 +103,7 @@ __host__ void decodeBlock(JPG* jpg, ColourChannel* channel){
 }
 
 
-__host__ void decodeScanCPU(JPG* jpg){
+__host__ void decodeScanCPU(JPGReader* jpg){
   unsigned char *pos = jpg->pos;
   unsigned int header_len = read16(pos);
   if (pos + header_len >= jpg->end) THROW(SYNTAX_ERROR);

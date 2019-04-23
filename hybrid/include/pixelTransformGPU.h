@@ -21,8 +21,8 @@ __global__ void iDCT_GPU(int* in,
 			 int stride,
 			 int samples_x, int samples_y,
 			 int num_DCT_blocks);
-/*__host__ void upsampleChannel(JPG* jpg, ColourChannel* channel);
-  __host__ void upsampleAndColourTransform(JPG* jpg);*/
+/*__host__ void upsampleChannel(JPGReader* jpg, ColourChannel* channel);
+  __host__ void upsampleAndColourTransform(JPGReader* jpg);*/
 
 
 #endif // PIXELTRANSFORMGPU_H //

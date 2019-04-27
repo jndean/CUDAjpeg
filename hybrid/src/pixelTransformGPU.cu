@@ -108,16 +108,6 @@ __global__ void iDCT_GPU(int* in,
   x2 = (181 * (x4 + x5) + 128) >> 8;
   x4 = (181 * (x4 - x5) + 128) >> 8;
 
-  // Write into shared memory first to allow coalesced global writes //
-  my_col[0*8] = clip(((x7 + x1) >> 14) + 128);
-  my_col[1*8] = clip(((x3 + x2) >> 14) + 128);
-  my_col[2*8] = clip(((x0 + x4) >> 14) + 128);
-  my_col[3*8] = clip(((x8 + x6) >> 14) + 128);
-  my_col[4*8] = clip(((x8 - x6) >> 14) + 128);
-  my_col[5*8] = clip(((x0 - x4) >> 14) + 128);
-  my_col[6*8] = clip(((x3 - x2) >> 14) + 128);
-  my_col[7*8] = clip(((x7 - x1) >> 14) + 128);
-
   // Work out where in the global output to start writing //
   int blocks_per_outer_block = samples_x * samples_y;
   int blocks_per_row = samples_y * (stride >> 3); 
@@ -130,15 +120,18 @@ __global__ void iDCT_GPU(int* in,
   int block_x = outer_block_x * samples_x + inner_block_x;
   int block_y = outer_block_y * samples_y + inner_block_y;
   out += (block_y * stride + block_x) << 3;
-  out += thread_in_block * stride;
-  
-  // Make sure other columns within this DCT block are finished //
-  __syncwarp();
+  out += thread_in_block;
 
-  for(int i=0; i<8; i++)
-    out[i] = my_row[i];
+  // Writes are coalesced within a DCT block, but not within the whole thread block. ToDo? //
+  *out = clip(((x7 + x1) >> 14) + 128); out += stride;
+  *out = clip(((x3 + x2) >> 14) + 128); out += stride;
+  *out = clip(((x0 + x4) >> 14) + 128); out += stride;
+  *out = clip(((x8 + x6) >> 14) + 128); out += stride;
+  *out = clip(((x8 - x6) >> 14) + 128); out += stride;
+  *out = clip(((x0 - x4) >> 14) + 128); out += stride;
+  *out = clip(((x3 - x2) >> 14) + 128); out += stride;
+  *out = clip(((x7 - x1) >> 14) + 128);
 }
-
 
 
 
@@ -161,8 +154,8 @@ __global__ void iDCT_GPU_warp_shuffle(int* in,
   int row_offset = thread_in_block << 3;
   in += (block_index << 6) + row_offset;
 
-  __shared__ int shared_blocks[64*8];
-  int* my_row = &shared_blocks[64*DCT_block_in_thread_block + row_offset];
+  //__shared__ int shared_blocks[64*8];
+  //int* my_row = &shared_blocks[64*DCT_block_in_thread_block + row_offset];
 
   // --------------- Do a single row in the DCT block --------------- //
   int x0, x1, x2, x3, x4, x5, x6, x7, x8;
@@ -221,8 +214,8 @@ __global__ void iDCT_GPU_warp_shuffle(int* in,
   
   // -------------------- Do a single column --------------------//
 
-  int* my_col = my_row - thread_in_block * 7;
-  /*x0 = my_col[0];
+  /*int* my_col = my_row - thread_in_block * 7;
+  x0 = my_col[0];
   x1 = my_col[8*1];
   x2 = my_col[8*2];
   x3 = my_col[8*3];
@@ -408,17 +401,7 @@ __global__ void iDCT_GPU_warp_shuffle(int* in,
   x0 -= x6;
   x6 = (181 * (x1 + x7) + 128) >> 8;
   x1 = (181 * (x1 - x7) + 128) >> 8;
-
-  // Write into shared memory first to allow coalesced global writes //
-  my_col[0*8] = clip(((x3 + x4) >> 14) + 128);
-  my_col[1*8] = clip(((x2 + x6) >> 14) + 128);
-  my_col[2*8] = clip(((x0 + x1) >> 14) + 128);
-  my_col[3*8] = clip(((x8 + x5) >> 14) + 128);
-  my_col[4*8] = clip(((x8 - x5) >> 14) + 128);
-  my_col[5*8] = clip(((x0 - x1) >> 14) + 128);
-  my_col[6*8] = clip(((x2 - x6) >> 14) + 128);
-  my_col[7*8] = clip(((x3 - x4) >> 14) + 128);
-
+  
   // Work out where in the global output to start writing //
   int blocks_per_outer_block = samples_x * samples_y;
   int blocks_per_row = samples_y * (stride >> 3); 
@@ -431,13 +414,17 @@ __global__ void iDCT_GPU_warp_shuffle(int* in,
   int block_x = outer_block_x * samples_x + inner_block_x;
   int block_y = outer_block_y * samples_y + inner_block_y;
   out += (block_y * stride + block_x) << 3;
-  out += thread_in_block * stride;
-  
-  // Make sure other columns within this DCT block are finished //
-  __syncwarp();
+  out += thread_in_block;
 
-  for(int i=0; i<8; i++)
-    out[i] = my_row[i];
+  // Writes are coalesced within a DCT block, but not within the whole thread block. ToDo? //
+  *out = clip(((x3 + x4) >> 14) + 128); out += stride;
+  *out = clip(((x2 + x6) >> 14) + 128); out += stride;
+  *out = clip(((x0 + x1) >> 14) + 128); out += stride;
+  *out = clip(((x8 + x5) >> 14) + 128); out += stride;
+  *out = clip(((x8 - x5) >> 14) + 128); out += stride;
+  *out = clip(((x0 - x1) >> 14) + 128); out += stride;
+  *out = clip(((x2 - x6) >> 14) + 128); out += stride;
+  *out = clip(((x3 - x4) >> 14) + 128);
 }
 
 

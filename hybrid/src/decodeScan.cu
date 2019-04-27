@@ -3,7 +3,7 @@
 #include<time.h>
 
 #include<format.h>
-#include<decodeScanCPU.h>
+#include<decodeScan.h>
 #include<pixelTransformCPU.h>
 #include<pixelTransformGPU.h>
 

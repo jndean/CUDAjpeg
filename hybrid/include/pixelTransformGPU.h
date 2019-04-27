@@ -15,6 +15,12 @@ __global__ void iDCT_GPU(int* in,
 			 int stride,
 			 int samples_x, int samples_y,
 			 int num_DCT_blocks);
+
+__global__ void iDCT_GPU_warp_shuffle(int* in,
+			 unsigned char *out,
+			 int stride,
+			 int samples_x, int samples_y,
+			 int num_DCT_blocks);
 /*__host__ void upsampleChannel(JPGReader* jpg, ColourChannel* channel);
   __host__ void upsampleAndColourTransform(JPGReader* jpg);*/
 

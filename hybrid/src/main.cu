@@ -4,7 +4,7 @@
 #include<time.h>
 
 #include<format.h>
-#include<decodeScanCPU.h>
+#include<decodeScan.h>
 #include<pixelTransformCPU.h>
 
 
@@ -27,7 +27,7 @@ int main(int argc, char** argv){
   }
 
   clock_t cumulative_time = 0;
-  int i, n = 50;
+  int i, n = 20;
   double total_time = 0;
   for (i=0; i<n; i++){
     int filename_id = 1 + (i % (argc - 1));
@@ -59,7 +59,8 @@ int main(int argc, char** argv){
     }
   }
   delJPGReader(reader);
-  
+
+  cudaDeviceSynchronize();
   cudaDeviceReset();
   return EXIT_SUCCESS;
 }

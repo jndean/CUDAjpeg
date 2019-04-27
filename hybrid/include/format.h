@@ -25,17 +25,19 @@ typedef struct _ColourChannel
   int dq_id, ac_id, dc_id;
   int width, height;
   int samples_x, samples_y, stride, block_stride;
-  unsigned char *pixels;
-  int size;
   int dc_cumulative_val;
+  unsigned char *pixels, *out, *device_out_space;
+  int size, max_size;
+  int out_size, max_out_size;
   int *working_space, *working_space_pos;
+  int *device_working_space;
 } ColourChannel;
 
 
 typedef struct _JPGReader
 {
   unsigned char *buf, *pos, *end;
-  unsigned int buf_size;
+  unsigned int buf_size, max_buf_size;
   unsigned short width, height;
   unsigned short num_blocks_x, num_blocks_y;
   unsigned short block_size_x, block_size_y;
@@ -43,7 +45,7 @@ typedef struct _JPGReader
   int error;
   ColourChannel channels[3];
   unsigned char *pixels;
-  int pixels_size;
+  int max_pixels_size;
   DhtVlc vlc_tables[4][65536];
   unsigned char dq_tables[4][64];
   int restart_interval;

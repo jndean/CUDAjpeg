@@ -24,11 +24,15 @@ __host__ int openJPG(JPGReader* reader, const char *filename){
   if (NULL == f) { error_val = FILE_ERROR; goto end; }
   fseek(f, 0, SEEK_END);
   size = ftell(f);
-  if ((size > reader->buf_size) || (!reader->buf)) {
-    if (reader->buf) free(reader->buf);
+  if ((size > reader->max_buf_size) || (!reader->buf)) {
+     if (reader->buf) free(reader->buf);
     reader->buf = (unsigned char *) malloc(size);
     if(!reader->buf) { error_val = OOM_ERROR; goto end; }
+    if (size > reader->max_buf_size)
+      reader->max_buf_size = size;
   }
+  
+  reader->buf_size = size;
   fseek(f, 0, SEEK_SET);
   if(fread(reader->buf, 1, size, f) != size)
     { error_val = FILE_ERROR; goto end; }
@@ -75,6 +79,7 @@ __host__ int openJPG(JPGReader* reader, const char *filename){
       else reader->error = SYNTAX_ERROR;
     }
 
+    
     // Finished //
     if (reader->pos[-1] == 0xD9) {
       upsampleAndColourTransform(reader);
@@ -97,6 +102,9 @@ __host__ void delJPGReader(JPGReader* reader){
   for(i = 0, c = reader->channels; i < 3; i++, c++){
     if (c->pixels) free(c->pixels);
     if (c->working_space) free(c->working_space);
+    if (c->out) free(c->out);
+    if(c->device_working_space) cudaFree(c->device_working_space);
+    if(c->device_out_space) cudaFree(c->device_out_space);
   }
   if(reader->pixels) free(reader->pixels);
   free(reader);
@@ -176,7 +184,7 @@ __host__ void decodeSOF(JPGReader* jpg){
   jpg->block_size_y = samples_y_max << 3;
   jpg->num_blocks_x = (jpg->width + jpg->block_size_x -1) / jpg->block_size_x;
   jpg->num_blocks_y = (jpg->height + jpg->block_size_y -1) / jpg->block_size_y;
-  
+ 
   for(i = 0, chan = jpg->channels; i < jpg->num_channels; i++, chan++){
     chan->width = (jpg->width * chan->samples_x + samples_x_max -1) / samples_x_max;
     chan->height = (jpg->height * chan->samples_y + samples_y_max -1) / samples_y_max;
@@ -187,33 +195,60 @@ __host__ void decodeSOF(JPGReader* jpg){
        ((chan->height < 3) && (chan->samples_y != samples_y_max)))
       THROW(UNSUPPORTED_ERROR);
 
+    // If more is needed, allocate CPU and/or GPU memory //
     int chan_size = chan->stride * jpg->num_blocks_y * (chan->samples_y << 3);
-    if ((!chan->pixels) || (chan_size > chan->size)){
+    if ((chan_size > chan->max_size) ||
+	(!chan->pixels) ||
+	(!chan->working_space) ||
+	(!chan->device_working_space) ||
+	(!chan->device_out_space)){
       if (chan->pixels) free(chan->pixels);
-      chan->pixels = (unsigned char*) malloc(chan_size);
-    }
-
-    if ((!chan->working_space) || (chan_size > chan->size)){
       if (chan->working_space) free(chan->working_space);
+      if (chan->device_working_space) cudaFree(chan->device_working_space);
+      if (chan->device_out_space) cudaFree(chan->device_out_space);
+      chan->pixels = (unsigned char*) malloc(chan_size);
       chan->working_space = (int*) calloc(chan_size, sizeof(int));
-    } else
+      if ((!chan->pixels) || (!chan->working_space)) THROW(OOM_ERROR);
+      cudaError_t cu_error;
+      cu_error = cudaMalloc(&chan->device_working_space, chan_size * sizeof(int));
+      if (cu_error) THROW(OOM_ERROR);
+      cu_error = cudaMalloc(&chan->device_out_space, chan_size * sizeof(unsigned char));
+      if (cu_error) THROW(OOM_ERROR);  
+    } else 
       memset(chan->working_space, 0, chan_size * sizeof(int));
 
     chan->working_space_pos = chan->working_space;
     chan->size = chan_size;
-    if(!chan->pixels || !chan->working_space) THROW(OOM_ERROR);
+    if (chan_size > chan->max_size)
+      chan->max_size = chan_size;    
+
+    // Same again but out_size might be different to chan_size if upsampling //
+    int out_width = chan->width, out_height = chan->height;
+    while (out_width < jpg->width) out_width <<= 1;
+    while (out_height < jpg->height) out_height <<= 1;
+    int chan_out_size = out_width * out_height;
+    if ((chan_out_size > chan->max_out_size) || (!chan->out)) {
+      if (chan->out) free(chan->out);
+      chan->out = (unsigned char*) malloc(chan_out_size);
+      if (!chan->out) THROW(OOM_ERROR);
+    }
+    chan->out_size = chan_out_size;
+    if (chan_out_size > chan->max_out_size)
+      chan->max_out_size = chan_out_size;
+
   }
   
-  if(jpg->num_channels == 3){
+  if (jpg->num_channels == 3){
     int pixels_size = jpg->width * jpg->height * 3;
-    if ((!jpg->pixels) || (jpg->pixels_size < pixels_size)){
+    if ((!jpg->pixels) || (jpg->max_pixels_size < pixels_size)){
       if (jpg->pixels) free(jpg->pixels);
       jpg->pixels = (unsigned char*) malloc(pixels_size);
-      jpg->pixels_size = pixels_size;
-      if(!jpg->pixels) THROW(OOM_ERROR);
+      if (!jpg->pixels) THROW(OOM_ERROR);
+      if (jpg->max_pixels_size < pixels_size)
+	jpg->max_pixels_size = pixels_size;
     }
   } 
-    
+
   jpg->pos += block_len;
 }
 

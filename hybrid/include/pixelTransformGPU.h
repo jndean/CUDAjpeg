@@ -10,12 +10,6 @@
 #define W7 565
 
 
-__global__ void iDCT_rows_GPU(int* D, int num_DCT_blocks);
-__global__ void iDCT_cols_GPU(int* D,
-			     unsigned char *out,
-			     int stride,
-			     int samples_x, int samples_y,
-			     int num_DCT_blocks);
 __global__ void iDCT_GPU(int* in,
 			 unsigned char *out,
 			 int stride,

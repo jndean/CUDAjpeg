@@ -9,7 +9,7 @@ SOURCES  := $(wildcard $(SRCDIR)/*.cu)
 INCLUDES := $(wildcard $(INCDIR)/*.h)
 OBJECTS  := $(SOURCES:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
 
-CFLAGS   = -O3 -I${INCDIR} 
+CFLAGS   = -O3 -I${INCDIR}
 
 default: main.o format.o decodeScanCPU.o pixelTransformCPU.o pixelTransformGPU.o
 	nvcc ${CFLAGS} $^ -o ${TARGET}

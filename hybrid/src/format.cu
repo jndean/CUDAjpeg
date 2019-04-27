@@ -8,13 +8,22 @@
 
 
 
-__host__ JPGReader* newJPGReader(){
+__host__ JPGReader* newJPGReader() {
   return (JPGReader*) calloc(1, sizeof(JPGReader));
 }
 
+__host__ void printError(JPGReader* reader) {
+  switch(reader->error){
+  case NO_ERROR: printf("NO_ERROR"); break;
+  case SYNTAX_ERROR: printf("SYNTAX_ERROR"); break;
+  case UNSUPPORTED_ERROR: printf("UNSUPPORTED_ERROR"); break;
+  case OOM_ERROR: printf("OOM_ERROR"); break;
+  case FILE_ERROR: printf("FILE_ERROR"); break;
+  default: printf("[That's not a real error code]");
+  }
+}
 
-
-__host__ int openJPG(JPGReader* reader, const char *filename){
+__host__ int openJPG(JPGReader* reader, const char *filename) {
   FILE* f = NULL;
   int error_val = NO_ERROR;
   unsigned int size = 0;
@@ -124,6 +133,8 @@ __host__ void writeJPG(JPGReader* reader, const char* filename){
 	  1, reader->width * reader->height * reader->num_channels, f);
    fclose(f);
 }
+
+
 
 
 __host__ unsigned short read16(const unsigned char *pos) {

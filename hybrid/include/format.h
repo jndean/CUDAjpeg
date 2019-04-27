@@ -62,6 +62,7 @@ __host__ void delJPGReader(JPGReader* reader);
 __host__ JPGReader* newJPGReader();
 __host__ int openJPG(JPGReader* reader, const char *filename);
 __host__ void writeJPG(JPGReader* jpg, const char* filename);
+__host__ void printError(JPGReader* reader);
 __host__ void skipBlock(JPGReader* jpg);
 __host__ void decodeSOF(JPGReader* jpg);
 __host__ void decodeDHT(JPGReader* jpg);

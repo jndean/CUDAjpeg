@@ -27,7 +27,7 @@ int main(int argc, char** argv){
   }
 
   clock_t cumulative_time = 0;
-  int i, n = 20;
+  int i, n = 50;
   double total_time = 0;
   for (i=0; i<n; i++){
     int filename_id = 1 + (i % (argc - 1));
@@ -36,12 +36,14 @@ int main(int argc, char** argv){
     int error = openJPG(reader, argv[filename_id]);
     fflush(stdout);
     total_time += (clock() - start);
-    if (error)
-      printf("Failed to open jpg %s, error code %d\n", argv[filename_id], error);
+    if (error){
+      printf("Failed to open jpg %s, error code: ", argv[filename_id]);
+      printError(reader); printf("\n");
+    }
+    
     cumulative_time += reader->time;
   }
 
-  fflush(stdout);
 
   double t_pi = 1000.0 * (double) total_time / (n * CLOCKS_PER_SEC);
   printf("%0.3lfms per image\n", t_pi);

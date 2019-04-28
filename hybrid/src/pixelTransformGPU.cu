@@ -443,7 +443,7 @@ __host__ inline unsigned char clipHost(const int x) {
 
 __host__ void upsampleChannelGPU(JPGReader* jpg, ColourChannel* channel) {
 
-  //if ((channel->width < jpg->width) || (channel->height < jpg->height)) {
+  if ((channel->width < jpg->width) || (channel->height < jpg->height)) {
     // Do an upscale //
     int x, y, xshift = 0, yshift = 0;
     while (channel->width < jpg->width) { channel->width <<= 1; ++xshift; }
@@ -456,15 +456,18 @@ __host__ void upsampleChannelGPU(JPGReader* jpg, ColourChannel* channel) {
     }    
     channel->stride = channel->width;
     
-    /*} else {
-    // Do a pointer swap //
-
-    channel->pixels ^= channel->out;
-    channel->size ^= channel->out_size;
-    channel->max_size ^= channel->max_out_size;
-
-    not done here, chan->pixles and chan->working_space can no longer share a size param
-    }*/
+  } else {    
+    // Do a pointer swap, assume the compiler will make it nicer //
+    unsigned char* tmp1 = channel->pixels.mem;
+    channel->pixels.mem = channel->raw_pixels.mem;
+    channel->raw_pixels.mem = tmp1;
+    unsigned int tmp2 = channel->pixels.size;
+    channel->pixels.size = channel->raw_pixels.size;
+    channel->raw_pixels.size = tmp2;
+    tmp2 = channel->pixels.max_size;
+    channel->pixels.max_size = channel->raw_pixels.max_size;
+    channel->raw_pixels.max_size = tmp2;
+  }
 }
 
 

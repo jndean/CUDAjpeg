@@ -3,12 +3,20 @@
 
 #include<time.h>
 
-
+// Error codes //
 #define NO_ERROR 0
 #define SYNTAX_ERROR 1
 #define UNSUPPORTED_ERROR 2
 #define OOM_ERROR 3
-#define FILE_ERROR 4
+#define CUDA_MEM_ERROR 4
+#define FILE_ERROR 5
+#define PROGRAMMER_ERROR -1
+
+// Memory options for ensureMemSize //
+#define USE_MALLOC 0
+#define USE_CALLOC 1
+#define USE_CUDA_MALLOC 2
+
 
 #define THROW(e) do { jpg->error = e; return; } while (0)
 
@@ -19,6 +27,19 @@ typedef struct _DhtVlc
 } DhtVlc;
 
 
+typedef struct _ManagedUCharMem
+{
+  unsigned char *mem;
+  unsigned int size, max_size;
+} ManagedUCharMem;
+
+typedef struct _ManagedIntMem
+{
+  int *mem;
+  unsigned int size, max_size;
+} ManagedIntMem;
+
+
 typedef struct _ColourChannel
 {
   int id;
@@ -26,18 +47,19 @@ typedef struct _ColourChannel
   int width, height;
   int samples_x, samples_y, stride, block_stride;
   int dc_cumulative_val;
-  unsigned char *pixels, *out, *device_out_space;
-  int size, max_size;
-  int out_size, max_out_size;
-  int *working_space, *working_space_pos;
-  int *device_working_space;
+  ManagedIntMem working_space;
+  ManagedIntMem device_working_space;
+  ManagedUCharMem device_raw_pixels;
+  ManagedUCharMem raw_pixels;
+  ManagedUCharMem pixels;
+  int* working_space_pos;
 } ColourChannel;
 
 
 typedef struct _JPGReader
 {
   unsigned char *buf, *pos, *end;
-  unsigned int buf_size, max_buf_size;
+  unsigned int buf_size, buf_max_size;
   unsigned short width, height;
   unsigned short num_blocks_x, num_blocks_y;
   unsigned short block_size_x, block_size_y;
@@ -57,17 +79,18 @@ typedef struct _JPGReader
 
 
 __host__ unsigned short read16(const unsigned char *pos);
-
+__host__ int ensureMemSize(ManagedUCharMem* mem, const unsigned int new_size, int mode);
+__host__ int ensureMemSize(ManagedIntMem* mem, const unsigned int new_size, int mode);
 __host__ void delJPGReader(JPGReader* reader);
 __host__ JPGReader* newJPGReader();
-__host__ int openJPG(JPGReader* reader, const char *filename);
+__host__ int openJPG(JPGReader* reader, const char* filename);
 __host__ void writeJPG(JPGReader* jpg, const char* filename);
 __host__ void printError(JPGReader* reader);
 __host__ void skipBlock(JPGReader* jpg);
 __host__ void decodeSOF(JPGReader* jpg);
 __host__ void decodeDHT(JPGReader* jpg);
-__host__ void decodeDQT(JPGReader *jpg);
-__host__ void decodeDRI(JPGReader *jpg);
+__host__ void decodeDQT(JPGReader* jpg);
+__host__ void decodeDRI(JPGReader* jpg);
 
 static const char deZigZag[64] = {
   0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48,

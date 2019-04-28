@@ -27,14 +27,12 @@ int main(int argc, char** argv){
   }
 
   clock_t cumulative_time = 0;
-  int i, n = 20;
+  int i, n = 200;
   double total_time = 0;
   for (i=0; i<n; i++){
     int filename_id = 1 + (i % (argc - 1));
     clock_t start = clock();
-    fflush(stdout);
     int error = openJPG(reader, argv[filename_id]);
-    fflush(stdout);
     total_time += (clock() - start);
     if (error){
       printf("Failed to open jpg %s, error code: ", argv[filename_id]);
@@ -49,7 +47,7 @@ int main(int argc, char** argv){
   printf("%0.3lfms per image\n", t_pi);
   
   double t = 1000.0 * (double) cumulative_time / CLOCKS_PER_SEC / n;
-  printf("DEBUG_TIME %lfms, %0.4lf%%\n", t, 100*t/t_pi);
+  printf("DEBUG_TIME %0.4lfms, %0.3lf%%\n", t, 100*t/t_pi);
 
   if(1){
     int error = openJPG(reader, argv[1]);
@@ -58,6 +56,7 @@ int main(int argc, char** argv){
       writeJPG(reader, filename);
     }
   }
+  
   delJPGReader(reader);
 
   cudaDeviceSynchronize();

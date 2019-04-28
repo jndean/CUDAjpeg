@@ -160,27 +160,20 @@ __host__ void decodeScanCPU(JPGReader* jpg){
 
 
   /* -------------------- GPU iDCT -------------------- */
-
-  clock_t start_time = clock();
-
   for (i = 0, channel = jpg->channels; i < jpg->num_channels; i++, channel++) {
-    int chan_size = channel->stride * jpg->num_blocks_y * (channel->samples_y << 3);
-    cudaMemcpy(channel->device_working_space, channel->working_space,
-	       chan_size * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(channel->device_working_space.mem, channel->working_space.mem,
+	       channel->working_space.size * sizeof(int), cudaMemcpyHostToDevice);
     int num_blocks =
       jpg->num_blocks_x * channel->samples_x * jpg->num_blocks_y * channel->samples_y;
     int num_thread_blocks = (num_blocks + 7) >> 3;
     int num_threads_per_block = 64;
-    iDCT_GPU<<<num_thread_blocks, num_threads_per_block>>>(channel->device_working_space,
-							   channel->device_out_space,
+    iDCT_GPU<<<num_thread_blocks, num_threads_per_block>>>(channel->device_working_space.mem,
+							   channel->device_raw_pixels.mem,
 							   channel->stride,
 							   channel->samples_x,
 							   channel->samples_y,
 							   num_blocks);
-    cudaMemcpy(channel->pixels, channel->device_out_space,
-    	       chan_size * sizeof(unsigned char), cudaMemcpyDeviceToHost);
+    cudaMemcpy(channel->raw_pixels.mem, channel->device_raw_pixels.mem,
+    	       channel->raw_pixels.size, cudaMemcpyDeviceToHost);
   }
-    
-  clock_t end_time = clock();
-  jpg->time += end_time - start_time;
 }

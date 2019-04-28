@@ -5,7 +5,7 @@
 #include<format.h>
 #include<decodeScan.h>
 #include<pixelTransformCPU.h>
-
+#include<pixelTransformGPU.h>
 
 
 __host__ JPGReader* newJPGReader() {
@@ -18,9 +18,72 @@ __host__ void printError(JPGReader* reader) {
   case SYNTAX_ERROR: printf("SYNTAX_ERROR"); break;
   case UNSUPPORTED_ERROR: printf("UNSUPPORTED_ERROR"); break;
   case OOM_ERROR: printf("OOM_ERROR"); break;
+  case CUDA_MEM_ERROR: printf("CUDA_MEM_ERROR"); break;
   case FILE_ERROR: printf("FILE_ERROR"); break;
+  case PROGRAMMER_ERROR: printf("PROGRAMMER_ERROR"); break;
   default: printf("[That's not a real error code]");
   }
+}
+
+
+__host__ int ensureMemSize(ManagedUCharMem* mem, const unsigned int new_size, int mode) {
+  mem->size = new_size;
+  if (mem->mem) {
+    if (new_size <= mem->max_size){
+      if (mode == USE_CALLOC) memset(mem->mem, 0, new_size);
+      return NO_ERROR;
+    }
+    if (mode == USE_CUDA_MALLOC) cudaFree(mem->mem);
+    else free(mem->mem);
+    mem->mem = NULL;
+  }
+  switch (mode){
+  case USE_CALLOC:
+    mem->mem = (unsigned char*) calloc(new_size, 1);
+    break;
+  case USE_MALLOC:
+    mem->mem = (unsigned char*) malloc(new_size);
+    break;
+  case USE_CUDA_MALLOC:
+    if (cudaMalloc(&mem->mem, new_size))
+      return CUDA_MEM_ERROR;
+    break;
+  default:
+    return PROGRAMMER_ERROR;
+  }
+  if (!(mem->mem)) return OOM_ERROR;
+  mem->max_size = new_size;
+  return NO_ERROR;
+}
+
+__host__ int ensureMemSize(ManagedIntMem* mem, const unsigned int new_size, int mode) {
+  mem->size = new_size;
+  if (mem->mem) {
+    if (new_size <= mem->max_size){
+      if (mode == USE_CALLOC) memset(mem->mem, 0, new_size * sizeof(int));
+      return NO_ERROR;
+    }
+    if (mode == USE_CUDA_MALLOC) cudaFree(mem->mem);
+    else free(mem->mem);
+    mem->mem = NULL;
+  }
+  switch (mode){
+  case USE_CALLOC:
+    mem->mem = (int*) calloc(new_size, sizeof(int));
+    break;
+  case USE_MALLOC:
+    mem->mem = (int*) malloc(new_size * sizeof(int));
+    break;
+  case USE_CUDA_MALLOC:
+    if (cudaMalloc(&mem->mem, new_size * sizeof(int)))
+      return CUDA_MEM_ERROR;
+    break;
+  default:
+    return PROGRAMMER_ERROR;
+  }
+  if (!(mem->mem)) return OOM_ERROR;
+  mem->max_size = new_size;
+  return NO_ERROR;
 }
 
 __host__ int openJPG(JPGReader* reader, const char *filename) {
@@ -33,15 +96,15 @@ __host__ int openJPG(JPGReader* reader, const char *filename) {
   if (NULL == f) { error_val = FILE_ERROR; goto end; }
   fseek(f, 0, SEEK_END);
   size = ftell(f);
-  if ((size > reader->max_buf_size) || (!reader->buf)) {
+  if ((size > reader->buf_max_size) || (!reader->buf)) {
      if (reader->buf) free(reader->buf);
     reader->buf = (unsigned char *) malloc(size);
     if(!reader->buf) { error_val = OOM_ERROR; goto end; }
-    if (size > reader->max_buf_size)
-      reader->max_buf_size = size;
+    if (size > reader->buf_max_size)
+      reader->buf_max_size = size;
   }
-  
   reader->buf_size = size;
+  if(error_val) goto end;
   fseek(f, 0, SEEK_SET);
   if(fread(reader->buf, 1, size, f) != size)
     { error_val = FILE_ERROR; goto end; }
@@ -55,11 +118,12 @@ __host__ int openJPG(JPGReader* reader, const char *filename) {
   }
 
   if (size < 6) {error_val = SYNTAX_ERROR; goto end;}
-  reader->buf_size = size;
   reader->end = reader->buf + size;
   reader->pos = reader->buf + 2;
   reader->restart_interval = 0;
-  reader->bufbits = reader->num_bufbits = reader->time = 0;
+  reader->bufbits = 0;
+  reader->num_bufbits = 0;
+  reader->time = 0;
   reader->error = NO_ERROR;
 
   
@@ -91,7 +155,10 @@ __host__ int openJPG(JPGReader* reader, const char *filename) {
     
     // Finished //
     if (reader->pos[-1] == 0xD9) {
-      upsampleAndColourTransform(reader);
+      clock_t start_time = clock();
+      upsampleAndColourTransformGPU(reader);
+      clock_t end_time = clock();
+      reader->time += end_time - start_time;
       break;
     }
   }
@@ -109,11 +176,11 @@ __host__ void delJPGReader(JPGReader* reader){
   if (reader->buf) free(reader->buf);
   int i; ColourChannel *c;
   for(i = 0, c = reader->channels; i < 3; i++, c++){
-    if (c->pixels) free(c->pixels);
-    if (c->working_space) free(c->working_space);
-    if (c->out) free(c->out);
-    if(c->device_working_space) cudaFree(c->device_working_space);
-    if(c->device_out_space) cudaFree(c->device_out_space);
+    if (c->pixels.mem) free(c->pixels.mem);
+    if (c->working_space.mem) free(c->working_space.mem);
+    if (c->raw_pixels.mem) free(c->raw_pixels.mem);
+    if(c->device_working_space.mem) cudaFree(c->device_working_space.mem);
+    if(c->device_raw_pixels.mem) cudaFree(c->device_raw_pixels.mem);
   }
   if(reader->pixels) free(reader->pixels);
   free(reader);
@@ -129,7 +196,7 @@ __host__ void writeJPG(JPGReader* reader, const char* filename){
    }
    fprintf(f, "P%d\n%d %d\n255\n", (reader->num_channels > 1) ? 6 : 5,
 	   reader->width, reader->height);
-   fwrite((reader->num_channels == 1) ? reader->channels[0].pixels : reader->pixels,
+   fwrite((reader->num_channels == 1) ? reader->channels[0].pixels.mem : reader->pixels,
 	  1, reader->width * reader->height * reader->num_channels, f);
    fclose(f);
 }
@@ -207,46 +274,24 @@ __host__ void decodeSOF(JPGReader* jpg){
       THROW(UNSUPPORTED_ERROR);
 
     // If more is needed, allocate CPU and/or GPU memory //
-    int chan_size = chan->stride * jpg->num_blocks_y * (chan->samples_y << 3);
-    if ((chan_size > chan->max_size) ||
-	(!chan->pixels) ||
-	(!chan->working_space) ||
-	(!chan->device_working_space) ||
-	(!chan->device_out_space)){
-      if (chan->pixels) free(chan->pixels);
-      if (chan->working_space) free(chan->working_space);
-      if (chan->device_working_space) cudaFree(chan->device_working_space);
-      if (chan->device_out_space) cudaFree(chan->device_out_space);
-      chan->pixels = (unsigned char*) malloc(chan_size);
-      chan->working_space = (int*) calloc(chan_size, sizeof(int));
-      if ((!chan->pixels) || (!chan->working_space)) THROW(OOM_ERROR);
-      cudaError_t cu_error;
-      cu_error = cudaMalloc(&chan->device_working_space, chan_size * sizeof(int));
-      if (cu_error) THROW(OOM_ERROR);
-      cu_error = cudaMalloc(&chan->device_out_space, chan_size * sizeof(unsigned char));
-      if (cu_error) THROW(OOM_ERROR);  
-    } else 
-      memset(chan->working_space, 0, chan_size * sizeof(int));
+    unsigned int chan_size = chan->stride * jpg->num_blocks_y * (chan->samples_y << 3);
+    int error;
+    if (error = ensureMemSize(&chan->working_space, chan_size, USE_CALLOC))
+      THROW(error);
+    if (error = ensureMemSize(&chan->device_working_space, chan_size, USE_CUDA_MALLOC))
+      THROW(error);
+    if (error = ensureMemSize(&chan->device_raw_pixels, chan_size, USE_CUDA_MALLOC))
+      THROW(error);
+    if (error = ensureMemSize(&chan->raw_pixels, chan_size, USE_MALLOC))
+      THROW(error);
+    chan->working_space_pos = chan->working_space.mem;
 
-    chan->working_space_pos = chan->working_space;
-    chan->size = chan_size;
-    if (chan_size > chan->max_size)
-      chan->max_size = chan_size;    
-
-    // Same again but out_size might be different to chan_size if upsampling //
     int out_width = chan->width, out_height = chan->height;
     while (out_width < jpg->width) out_width <<= 1;
     while (out_height < jpg->height) out_height <<= 1;
     int chan_out_size = out_width * out_height;
-    if ((chan_out_size > chan->max_out_size) || (!chan->out)) {
-      if (chan->out) free(chan->out);
-      chan->out = (unsigned char*) malloc(chan_out_size);
-      if (!chan->out) THROW(OOM_ERROR);
-    }
-    chan->out_size = chan_out_size;
-    if (chan_out_size > chan->max_out_size)
-      chan->max_out_size = chan_out_size;
-
+    if (error = ensureMemSize(&chan->pixels, chan_out_size, USE_MALLOC))
+      THROW(error);
   }
   
   if (jpg->num_channels == 3){

@@ -6,6 +6,14 @@
 #include<pixelTransformCPU.h>
 
 
+#define W1 2841
+#define W2 2676
+#define W3 2408
+#define W5 1609
+#define W6 1108
+#define W7 565
+
+
 __host__ inline unsigned char clip(const int x) {
   return (x < 0) ? 0 : ((x > 0xFF) ? 0xFF : (unsigned char) x);
 }
@@ -114,10 +122,10 @@ __host__ void upsampleChannel(JPGReader* jpg, ColourChannel* channel) {
     while (channel->height < jpg->height) { channel->height <<= 1; ++yshift; }
     //out = (unsigned char*) malloc(channel->width * channel->height);
     //if (!out) THROW(OOM_ERROR);
-    out = channel->out;
+    out = channel->pixels.mem;
     
     for (y = 0, lout = out;  y < channel->height;  ++y, lout += channel->width) {
-        unsigned char *lin = &channel->pixels[(y >> yshift) * channel->stride];
+        unsigned char *lin = &channel->raw_pixels.mem[(y >> yshift) * channel->stride];
         for (x = 0;  x < channel->width;  ++x)
             lout[x] = lin[x >> xshift];
     }
@@ -131,6 +139,7 @@ __host__ void upsampleChannel(JPGReader* jpg, ColourChannel* channel) {
 __host__ void upsampleAndColourTransform(JPGReader* jpg) {
   int i;
   ColourChannel* channel;
+  
   for (i = 0, channel = &jpg->channels[0];  i < jpg->num_channels;  ++i, ++channel) {
     //if ((channel->width < jpg->width) || (channel->height < jpg->height))
       upsampleChannel(jpg, channel);
@@ -140,12 +149,13 @@ __host__ void upsampleAndColourTransform(JPGReader* jpg) {
       THROW(SYNTAX_ERROR);
     }
   }
+  
   if (jpg->num_channels == 3) {
     // convert to RGB //
     unsigned char *prgb = jpg->pixels;
-    const unsigned char *py  = jpg->channels[0].out;
-    const unsigned char *pcb = jpg->channels[1].out;
-    const unsigned char *pcr = jpg->channels[2].out;
+    const unsigned char *py  = jpg->channels[0].pixels.mem;
+    const unsigned char *pcb = jpg->channels[1].pixels.mem;
+    const unsigned char *pcr = jpg->channels[2].pixels.mem;
     for (int yy = jpg->height;  yy;  --yy) {
       for (int x = 0;  x < jpg->width;  ++x) {
 	register int y = py[x] << 8;
@@ -162,8 +172,8 @@ __host__ void upsampleAndColourTransform(JPGReader* jpg) {
   } else if (jpg->channels[0].width != jpg->channels[0].stride) {
     // grayscale -> only remove stride
     ColourChannel *channel = &jpg->channels[0];
-    unsigned char *pin = &channel->out[channel->stride];
-    unsigned char *pout = &channel->out[channel->width];
+    unsigned char *pin = &channel->pixels.mem[channel->stride];
+    unsigned char *pout = &channel->pixels.mem[channel->width];
     for (int y = channel->height - 1;  y;  --y) {
       memcpy(pout, pin, channel->width);
       pin += channel->stride;

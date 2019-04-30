@@ -26,7 +26,7 @@ __host__ int showBits(JPGReader* jpg, int num_bits){
       continue;
 	
     if(jpg->pos >= jpg->end)
-      goto overflow_error;
+      goto error;
     
     // Handle byte stuffing //
     unsigned char follow_byte = *jpg->pos++;
@@ -36,20 +36,16 @@ __host__ int showBits(JPGReader* jpg, int num_bits){
     case 0xD9:
       break;
     default:
-      if ((follow_byte & 0xF8) != 0xD0){
-	printf("The follow_byte case that doesn't have to be 0x00?\n");
-	goto overflow_error;
-      } else {
-	printf("The acceptable non-zero followbyte case?\n");
-	jpg->bufbits = (jpg->bufbits << 8) | newbyte;
+      if ((follow_byte & 0xF8) == 0xD0){
+	jpg->bufbits = (jpg->bufbits << 8) | follow_byte;
 	jpg->num_bufbits += 8;
-      }
+      } else goto error;
+
     }
   }
   return (jpg->bufbits >> (jpg->num_bufbits - num_bits)) & ((1 << num_bits) - 1);
 
- overflow_error:
-  printf("Huffman decode overflow?\n");
+ error:
   jpg->error = SYNTAX_ERROR;
   return 0;
 }
@@ -143,8 +139,7 @@ __host__ void decodeScanCPU(JPGReader* jpg){
 	}
       }
 
-      if (restart_interval && !(--restart_count)){
-	printf("Doing a restart\n");
+      if (restart_interval && !(--restart_count) && (jpg->pos < jpg->end)){
 	// Byte align //
 	jpg->num_bufbits &= 0xF8;
 	i = getBits(jpg, 16);

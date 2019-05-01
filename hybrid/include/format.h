@@ -51,6 +51,7 @@ typedef struct _ColourChannel
   ManagedIntMem device_working_space;
   ManagedUCharMem device_raw_pixels;
   ManagedUCharMem raw_pixels;
+  ManagedUCharMem device_pixels;
   ManagedUCharMem pixels;
   int* working_space_pos;
 } ColourChannel;

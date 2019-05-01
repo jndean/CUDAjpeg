@@ -441,7 +441,54 @@ __host__ inline unsigned char clipHost(const int x) {
 }
 
 
+__global__ void upsampleChannelGPU_kernel(unsigned char* in, unsigned char*out,
+					  unsigned int in_width,
+					  unsigned int x_scale, unsigned int y_scale) {
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  // I assume since each input block is 64 chars, and an upsample must at least
+  // double one of the dimensions, that the size of 'out' is a multiple of 128.
+  // So for now I use thread blocks of size 128 and don't check bounds of 'out'
+  // if (i >= out_size) return;
+  int out_width = in_width << x_scale;
+  int y = (i / out_width) >> y_scale;
+  int x = (i % out_width) >> x_scale;
+  out[i] = in[y * in_width + x];
+}
+
+
 __host__ void upsampleChannelGPU(JPGReader* jpg, ColourChannel* channel) {
+
+  clock_t start_time = clock();
+  if ((channel->width < jpg->width) || (channel->height < jpg->height)) {
+    // Do an upscale //
+    unsigned int xshift = 0, yshift = 0;
+    unsigned int in_width = channel->width;
+    while (channel->width < jpg->width) { channel->width <<= 1; ++xshift; }
+    while (channel->height < jpg->height) { channel->height <<= 1; ++yshift; }
+    int threads_per_block = 128;
+    int num_blocks = (channel->width * channel->height) / threads_per_block;
+    
+    upsampleChannelGPU_kernel<<<num_blocks, threads_per_block>>>(channel->device_raw_pixels.mem,
+								 channel->device_pixels.mem,
+								 in_width,
+								 xshift,
+								 yshift);
+
+    channel->stride = channel->width;
+    
+    cudaMemcpy(channel->pixels.mem, channel->device_pixels.mem,
+	       channel->pixels.size, cudaMemcpyDeviceToHost);
+    
+  } else {
+    
+    cudaMemcpy(channel->pixels.mem, channel->device_raw_pixels.mem,
+	       channel->raw_pixels.size, cudaMemcpyDeviceToHost);
+   }
+  clock_t end_time = clock();
+  jpg->time += end_time - start_time;
+}
+
+__host__ void upsampleChannelCPU(JPGReader* jpg, ColourChannel* channel) {
 
   if ((channel->width < jpg->width) || (channel->height < jpg->height)) {
     // Do an upscale //
@@ -475,10 +522,9 @@ __host__ void upsampleAndColourTransformGPU(JPGReader* jpg) {
   int i;
   ColourChannel* channel;
   
-  clock_t start_time = clock();
   for (i = 0, channel = &jpg->channels[0];  i < jpg->num_channels;  ++i, ++channel) {
     //if ((channel->width < jpg->width) || (channel->height < jpg->height))
-      upsampleChannelGPU(jpg, channel);
+    upsampleChannelGPU(jpg, channel);
     
     if ((channel->width < jpg->width) || (channel->height < jpg->height)){
       fprintf(stderr, "Logical error in upscale?\n");
@@ -518,6 +564,53 @@ __host__ void upsampleAndColourTransformGPU(JPGReader* jpg) {
     channel->stride = channel->width;
   }
   
-  clock_t end_time = clock();
-  //jpg->time += end_time - start_time;
+}
+
+
+__host__ void upsampleAndColourTransformCPU(JPGReader* jpg) {
+  int i;
+  ColourChannel* channel;
+  
+  for (i = 0, channel = &jpg->channels[0];  i < jpg->num_channels;  ++i, ++channel) {
+    //if ((channel->width < jpg->width) || (channel->height < jpg->height))
+      upsampleChannelCPU(jpg, channel);
+    
+    if ((channel->width < jpg->width) || (channel->height < jpg->height)){
+      fprintf(stderr, "Logical error in upscale?\n");
+      THROW(SYNTAX_ERROR);
+    }
+  }
+  
+  if (jpg->num_channels == 3) {
+    // convert to RGB //
+    unsigned char *prgb = jpg->pixels;
+    const unsigned char *py  = jpg->channels[0].pixels.mem;
+    const unsigned char *pcb = jpg->channels[1].pixels.mem;
+    const unsigned char *pcr = jpg->channels[2].pixels.mem;
+    for (int yy = jpg->height;  yy;  --yy) {
+      for (int x = 0;  x < jpg->width;  ++x) {
+	register int y = py[x] << 8;
+	register int cb = pcb[x] - 128;
+	register int cr = pcr[x] - 128;
+	*prgb++ = clipHost((y            + 359 * cr + 128) >> 8);
+	*prgb++ = clipHost((y -  88 * cb - 183 * cr + 128) >> 8);
+	*prgb++ = clipHost((y + 454 * cb            + 128) >> 8);
+      }
+      py += jpg->channels[0].stride;
+      pcb += jpg->channels[1].stride;
+      pcr += jpg->channels[2].stride;
+    }
+  } else if (jpg->channels[0].width != jpg->channels[0].stride) {
+    // grayscale -> only remove stride
+    ColourChannel *channel = &jpg->channels[0];
+    unsigned char *pin = &channel->pixels.mem[channel->stride];
+    unsigned char *pout = &channel->pixels.mem[channel->width];
+    for (int y = channel->height - 1;  y;  --y) {
+      memcpy(pout, pin, channel->width);
+      pin += channel->stride;
+      pout += channel->width;
+    }
+    channel->stride = channel->width;
+  }
+  
 }

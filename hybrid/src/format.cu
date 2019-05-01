@@ -155,10 +155,7 @@ __host__ int openJPG(JPGReader* reader, const char *filename) {
     
     // Finished //
     if (reader->pos[-1] == 0xD9) {
-      clock_t start_time = clock();
       upsampleAndColourTransformGPU(reader);
-      clock_t end_time = clock();
-      reader->time += end_time - start_time;
       break;
     }
   }
@@ -291,6 +288,8 @@ __host__ void decodeSOF(JPGReader* jpg){
     while (out_height < jpg->height) out_height <<= 1;
     int chan_out_size = out_width * out_height;
     if (error = ensureMemSize(&chan->pixels, chan_out_size, USE_MALLOC))
+      THROW(error);
+    if (error = ensureMemSize(&chan->device_pixels, chan_out_size, USE_CUDA_MALLOC))
       THROW(error);
   }
   

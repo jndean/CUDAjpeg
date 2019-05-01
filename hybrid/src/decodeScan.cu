@@ -168,7 +168,7 @@ __host__ void decodeScanCPU(JPGReader* jpg){
 							   channel->samples_x,
 							   channel->samples_y,
 							   num_blocks);
-    cudaMemcpy(channel->raw_pixels.mem, channel->device_raw_pixels.mem,
-    	       channel->raw_pixels.size, cudaMemcpyDeviceToHost);
+    /*cudaMemcpy(channel->raw_pixels.mem, channel->device_raw_pixels.mem,
+      channel->raw_pixels.size, cudaMemcpyDeviceToHost);*/
   }
 }

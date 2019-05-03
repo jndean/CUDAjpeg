@@ -480,9 +480,8 @@ __host__ void upsampleChannelGPU(JPGReader* jpg, ColourChannel* channel) {
 	       channel->pixels.size, cudaMemcpyDeviceToHost);
     
   } else {
-    
     cudaMemcpy(channel->pixels.mem, channel->device_raw_pixels.mem,
-	       channel->raw_pixels.size, cudaMemcpyDeviceToHost);
+	       channel->pixels.size, cudaMemcpyDeviceToHost);
    }
   clock_t end_time = clock();
   jpg->time += end_time - start_time;

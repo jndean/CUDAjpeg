@@ -62,7 +62,7 @@ __host__ int getBits(JPGReader* jpg, int num_bits){
 __host__ int getVLC(JPGReader* jpg, DhtVlc* vlc_table, unsigned char* code){
   int symbol = showBits(jpg, 16);
   DhtVlc vlc = vlc_table[symbol];
-  if(!vlc.num_bits){
+  if(!vlc.num_bits) {
     jpg->error = SYNTAX_ERROR;
     return 0;
   }

@@ -155,7 +155,7 @@ __host__ int openJPG(JPGReader* reader, const char *filename) {
     
     // Finished //
     if (reader->pos[-1] == 0xD9) {
-      upsampleAndColourTransformGPU(reader);
+      upsampleAndColourTransformHybrid(reader);
       break;
     }
   }

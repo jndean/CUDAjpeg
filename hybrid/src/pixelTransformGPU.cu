@@ -441,8 +441,8 @@ __host__ inline unsigned char clipHost(const int x) {
 }
 
 
-__global__ void upsampleChannelGPU_kernel(unsigned char* in, unsigned char*out,
-					  unsigned int in_width,
+__global__ void upsampleChannelGPU_cokernel(unsigned char* in, unsigned char*out,
+					    unsigned int in_width, unsigned int in_stride,
 					  unsigned int x_scale, unsigned int y_scale) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   // I assume since each input block is 64 chars, and an upsample must at least
@@ -452,18 +452,20 @@ __global__ void upsampleChannelGPU_kernel(unsigned char* in, unsigned char*out,
   int out_width = in_width << x_scale;
   int y = (i / out_width) >> y_scale;
   int x = (i % out_width) >> x_scale;
-  out[i] = in[y * in_width + x];
+  out[i] = in[y * in_stride + x];
 }
 
-
-__global__ void upsampleChannelGPU_cokernel(unsigned char* in, unsigned char*out,
-					    unsigned int in_width,
-					    unsigned int x_scale, unsigned int y_scale) {
+__global__ void upsampleChannelGPU_kernel(unsigned char* in, unsigned char*out,
+					  unsigned int in_stride, unsigned int out_width,
+					  unsigned int x_scale, unsigned int y_scale) {
+  // Since each DCT block is 64 chars, can assume size of 'in' is a multiple of
+  // 64, hence blockDim.x is set to 64 and no bounds checking is done at the
+  // start of the kernel.
   int i = blockIdx.x * blockDim.x + threadIdx.x;
-  int out_width = in_width << x_scale;
-  int y = i / in_width;
-  int x = i % in_width;
-  out += (y << y_scale) * out_width + (x << x_scale);
+  //int out_width = in_width << x_scale;
+  int out_y = (i / in_stride) << y_scale;
+  int out_x = (i % in_stride) << x_scale;
+  out += out_y * out_width + out_x;
   for(int y_step = 0; y_step < (1 << y_scale); y_step++) {
     for(int x_step = 0; x_step < (1 << x_scale); x_step++) 
       out[x_step] = in[i];
@@ -473,7 +475,7 @@ __global__ void upsampleChannelGPU_cokernel(unsigned char* in, unsigned char*out
 
 
 __host__ void upsampleChannelGPU(JPGReader* jpg, ColourChannel* channel) {
-
+  
   if ((channel->width < jpg->width) || (channel->height < jpg->height)) {
     // Do an upscale //
     unsigned int xshift = 0, yshift = 0;
@@ -484,17 +486,19 @@ __host__ void upsampleChannelGPU(JPGReader* jpg, ColourChannel* channel) {
     
     /*int threads_per_block = 128;
     int num_blocks = (channel->width * channel->height) / threads_per_block;
+    upsampleChannelGPU_cokernel<<<num_blocks, threads_per_block>>>(channel->device_raw_pixels.mem,
+								   channel->device_pixels.mem,
+								   in_width,
+								   channel->stride,
+								   xshift,
+								   yshift);*/
+    
+    int threads_per_block = 64;
+    int num_blocks = (in_width * in_height) / threads_per_block;
     upsampleChannelGPU_kernel<<<num_blocks, threads_per_block>>>(channel->device_raw_pixels.mem,
 								 channel->device_pixels.mem,
-								 in_width,
-								 xshift,
-								 yshift);*/
-    
-    int threads_per_block = 128;
-    int num_blocks = (in_width * in_height) / threads_per_block;
-    upsampleChannelGPU_cokernel<<<num_blocks, threads_per_block>>>(channel->device_raw_pixels.mem,
-								 channel->device_pixels.mem,
-								 in_width,
+								 channel->stride,
+								 channel->width,
 								 xshift,
 								 yshift);
     cudaDeviceSynchronize();
@@ -503,10 +507,14 @@ __host__ void upsampleChannelGPU(JPGReader* jpg, ColourChannel* channel) {
     channel->stride = channel->width;
     cudaMemcpy(channel->pixels.mem, channel->device_pixels.mem,
 	       channel->pixels.size, cudaMemcpyDeviceToHost);
+    //memset(channel->pixels.mem, 100, channel->pixels.size);
     
   } else {
     cudaMemcpy(channel->pixels.mem, channel->device_raw_pixels.mem,
 	       channel->pixels.size, cudaMemcpyDeviceToHost);
+    //memset(channel->pixels.mem, 100, channel->pixels.size);
+    printf("%d, %d : %d, %d\n", channel->pixels.size, channel->device_raw_pixels.size,
+	   channel->width, channel->stride);
    }
   }
 
@@ -540,7 +548,7 @@ __host__ void upsampleChannelCPU(JPGReader* jpg, ColourChannel* channel) {
 }
 
 
-__host__ void upsampleAndColourTransformGPU(JPGReader* jpg) {
+__host__ void upsampleAndColourTransformHybrid(JPGReader* jpg) {
   int i;
   ColourChannel* channel;
   

@@ -456,26 +456,51 @@ __global__ void upsampleChannelGPU_kernel(unsigned char* in, unsigned char*out,
 }
 
 
+__global__ void upsampleChannelGPU_cokernel(unsigned char* in, unsigned char*out,
+					    unsigned int in_width,
+					    unsigned int x_scale, unsigned int y_scale) {
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  int out_width = in_width << x_scale;
+  int y = i / in_width;
+  int x = i % in_width;
+  out += (y << y_scale) * out_width + (x << x_scale);
+  for(int y_step = 0; y_step < (1 << y_scale); y_step++) {
+    for(int x_step = 0; x_step < (1 << x_scale); x_step++) 
+      out[x_step] = in[i];
+    out += out_width;
+  }
+}
+
+
 __host__ void upsampleChannelGPU(JPGReader* jpg, ColourChannel* channel) {
 
-  clock_t start_time = clock();
   if ((channel->width < jpg->width) || (channel->height < jpg->height)) {
     // Do an upscale //
     unsigned int xshift = 0, yshift = 0;
-    unsigned int in_width = channel->width;
+    unsigned int in_width = channel->width, in_height = channel->height;
     while (channel->width < jpg->width) { channel->width <<= 1; ++xshift; }
     while (channel->height < jpg->height) { channel->height <<= 1; ++yshift; }
-    int threads_per_block = 128;
-    int num_blocks = (channel->width * channel->height) / threads_per_block;
+    clock_t start_time = clock();
     
+    /*int threads_per_block = 128;
+    int num_blocks = (channel->width * channel->height) / threads_per_block;
     upsampleChannelGPU_kernel<<<num_blocks, threads_per_block>>>(channel->device_raw_pixels.mem,
 								 channel->device_pixels.mem,
 								 in_width,
 								 xshift,
-								 yshift);
-
-    channel->stride = channel->width;
+								 yshift);*/
     
+    int threads_per_block = 128;
+    int num_blocks = (in_width * in_height) / threads_per_block;
+    upsampleChannelGPU_cokernel<<<num_blocks, threads_per_block>>>(channel->device_raw_pixels.mem,
+								 channel->device_pixels.mem,
+								 in_width,
+								 xshift,
+								 yshift);
+    cudaDeviceSynchronize();
+    clock_t end_time = clock();
+    jpg->time += end_time - start_time;
+    channel->stride = channel->width;
     cudaMemcpy(channel->pixels.mem, channel->device_pixels.mem,
 	       channel->pixels.size, cudaMemcpyDeviceToHost);
     
@@ -483,9 +508,7 @@ __host__ void upsampleChannelGPU(JPGReader* jpg, ColourChannel* channel) {
     cudaMemcpy(channel->pixels.mem, channel->device_raw_pixels.mem,
 	       channel->pixels.size, cudaMemcpyDeviceToHost);
    }
-  clock_t end_time = clock();
-  jpg->time += end_time - start_time;
-}
+  }
 
 __host__ void upsampleChannelCPU(JPGReader* jpg, ColourChannel* channel) {
 

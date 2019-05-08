@@ -155,7 +155,7 @@ __host__ int openJPG(JPGReader* reader, const char *filename) {
     
     // Finished //
     if (reader->pos[-1] == 0xD9) {
-      upsampleAndColourTransformHybrid(reader);
+      upsampleAndColourTransformGPU(reader);
       break;
     }
   }
@@ -302,6 +302,16 @@ __host__ void decodeSOF(JPGReader* jpg){
       if (jpg->max_pixels_size < pixels_size)
 	jpg->max_pixels_size = pixels_size;
     }
+
+    int error;
+    if (error = ensureMemSize(&jpg->device_pixels, pixels_size, USE_CUDA_MALLOC))
+      THROW(error);
+
+    if ((jpg->channels[1].width != jpg->channels[2].width) ||
+	(jpg->channels[1].height != jpg->channels[2].height) ||
+	(jpg->channels[0].width != jpg->width) ||
+	(jpg->channels[0].height != jpg->height))
+      THROW(UNSUPPORTED_ERROR); // I thought this never happened
   } 
 
   jpg->pos += block_len;

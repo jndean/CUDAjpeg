@@ -462,7 +462,6 @@ __global__ void upsampleChannelGPU_kernel(unsigned char* in, unsigned char*out,
   // 64, hence blockDim.x is set to 64 and no bounds checking is done at the
   // start of the kernel.
   int i = blockIdx.x * blockDim.x + threadIdx.x;
-  //int out_width = in_width << x_scale;
   int out_y = (i / in_stride) << y_scale;
   int out_x = (i % in_stride) << x_scale;
   out += out_y * out_width + out_x;
@@ -473,6 +472,43 @@ __global__ void upsampleChannelGPU_kernel(unsigned char* in, unsigned char*out,
   }
 }
 
+__global__ void upsampleAndYUVtoRGB_kernel(unsigned char* Y, unsigned char* Cb, unsigned char* Cr,
+					   unsigned char* RGB,
+					   unsigned int x_scale, unsigned int y_scale,
+					   unsigned int Y_width, unsigned int Y_height,
+					   unsigned int Y_stride,
+					   unsigned int C_width, unsigned int C_stride) {
+  // Uses a thread per pixel from Cb/Cr, which could correspond to
+  // 1, 2 or 4 pixels from Y. Y and RGB have the same pixel dimensions, but,
+  // unlike RGB, Y will probably have a stride different to its width. Also
+  // RGB has 3 chars per pixel, whilst Y has 1.
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  
+  int C_x = i % C_width;
+  int C_y = i / C_width;
+  i = C_y * C_stride + C_x;
+  int cb = Cb[i] - 128, cr = Cr[i] - 128;
+  
+  int Y_x = C_x << x_scale;
+  int Y_y = C_y << y_scale;
+
+  RGB += (Y_y * Y_width  + Y_x) * 3;
+  Y   += Y_y * Y_stride + Y_x;
+
+  int y_steps = 1 << y_scale;//min(1 << y_scale, Y_height - Y_y);
+  int x_steps = 3 << x_scale;//min(3 << x_scale, Y_width - Y_x);
+    
+  for(int y_step = 0; y_step < y_steps; y_step++) {
+    for(int x_step = 0; x_step < x_steps;) {
+      int y = (*Y++) << 8;
+      RGB[x_step++] = clip((y + 359 * cr + 128) >> 8);           // R
+      RGB[x_step++] = clip((y - 88 * cb - 183 * cr + 128) >> 8); // G
+      RGB[x_step++] = clip((y + 454 * cb + 128) >> 8);           // B
+    }
+    RGB += Y_width * 3;
+    Y += Y_stride - (x_steps/3);
+  }
+}
 
 __host__ void upsampleChannelGPU(JPGReader* jpg, ColourChannel* channel) {
   
@@ -482,7 +518,6 @@ __host__ void upsampleChannelGPU(JPGReader* jpg, ColourChannel* channel) {
     unsigned int in_width = channel->width, in_height = channel->height;
     while (channel->width < jpg->width) { channel->width <<= 1; ++xshift; }
     while (channel->height < jpg->height) { channel->height <<= 1; ++yshift; }
-    clock_t start_time = clock();
     
     /*int threads_per_block = 128;
     int num_blocks = (channel->width * channel->height) / threads_per_block;
@@ -501,20 +536,15 @@ __host__ void upsampleChannelGPU(JPGReader* jpg, ColourChannel* channel) {
 								 channel->width,
 								 xshift,
 								 yshift);
-    cudaDeviceSynchronize();
-    clock_t end_time = clock();
-    jpg->time += end_time - start_time;
+    
     channel->stride = channel->width;
     cudaMemcpy(channel->pixels.mem, channel->device_pixels.mem,
 	       channel->pixels.size, cudaMemcpyDeviceToHost);
-    //memset(channel->pixels.mem, 100, channel->pixels.size);
     
   } else {
     cudaMemcpy(channel->pixels.mem, channel->device_raw_pixels.mem,
 	       channel->pixels.size, cudaMemcpyDeviceToHost);
-    //memset(channel->pixels.mem, 100, channel->pixels.size);
-    printf("%d, %d : %d, %d\n", channel->pixels.size, channel->device_raw_pixels.size,
-	   channel->width, channel->stride);
+
    }
   }
 
@@ -548,9 +578,46 @@ __host__ void upsampleChannelCPU(JPGReader* jpg, ColourChannel* channel) {
 }
 
 
+__host__ void upsampleAndColourTransformGPU(JPGReader* jpg) {
+ 
+  clock_t start_time = clock();
+  if (jpg->num_channels == 3) {
+
+    unsigned int xshift = 0, yshift = 0;
+    while ((jpg->channels[1].width << xshift) < jpg->width) ++xshift;
+    while ((jpg->channels[1].height << yshift) < jpg->height) ++yshift;
+
+    ColourChannel *channels = jpg->channels;
+    int tpb = 64; // threads per block
+    int num_blocks = ((channels[1].width * channels[1].height) + tpb-1) / tpb;
+    upsampleAndYUVtoRGB_kernel<<<num_blocks, tpb>>>(channels[0].device_raw_pixels.mem,
+						    channels[1].device_raw_pixels.mem,
+						    channels[2].device_raw_pixels.mem,
+						    jpg->device_pixels.mem,
+						    xshift, yshift,
+						    channels[0].width, channels[0].height,
+						    channels[0].stride,
+						    channels[1].width, channels[1].stride);
+    cudaMemcpy(jpg->pixels, jpg->device_pixels.mem,
+	       jpg->device_pixels.size, cudaMemcpyDeviceToHost);
+   
+  } else {
+    
+    ColourChannel* c = &jpg->channels[0];
+    cudaMemcpy2D(c->pixels.mem, jpg->width,
+		 c->device_raw_pixels.mem, c->stride,
+		 c->width, c->height,
+		 cudaMemcpyDeviceToHost);
+  }
+  cudaDeviceSynchronize();
+  clock_t end_time = clock();
+  jpg->time += end_time - start_time;
+}
+
 __host__ void upsampleAndColourTransformHybrid(JPGReader* jpg) {
   int i;
   ColourChannel* channel;
+  clock_t start_time = clock();
   
   for (i = 0, channel = &jpg->channels[0];  i < jpg->num_channels;  ++i, ++channel) {
     //if ((channel->width < jpg->width) || (channel->height < jpg->height))
@@ -594,6 +661,9 @@ __host__ void upsampleAndColourTransformHybrid(JPGReader* jpg) {
     channel->stride = channel->width;
   }
   
+  cudaDeviceSynchronize();
+  clock_t end_time = clock();
+  jpg->time += end_time - start_time;
 }
 
 

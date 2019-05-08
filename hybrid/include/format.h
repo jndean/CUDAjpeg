@@ -69,6 +69,7 @@ typedef struct _JPGReader
   ColourChannel channels[3];
   unsigned char *pixels;
   int max_pixels_size;
+  ManagedUCharMem device_pixels;
   DhtVlc vlc_tables[4][65536];
   unsigned char dq_tables[4][64];
   int restart_interval;

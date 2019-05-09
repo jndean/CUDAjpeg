@@ -540,6 +540,7 @@ __host__ void upsampleChannelGPU(JPGReader* jpg, ColourChannel* channel) {
     channel->stride = channel->width;
     cudaMemcpy(channel->pixels.mem, channel->device_pixels.mem,
 	       channel->pixels.size, cudaMemcpyDeviceToHost);
+    //memset(channel->pixels.mem, 100, channel->pixels.size);
     
   } else {
     cudaMemcpy(channel->pixels.mem, channel->device_raw_pixels.mem,

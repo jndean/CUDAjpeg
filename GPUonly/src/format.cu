@@ -4,6 +4,7 @@
 
 #include<format.h>
 #include<decodeScan.h>
+#include<decodeScanGPU.h>
 #include<pixelTransformGPU.h>
 
 
@@ -143,7 +144,7 @@ __host__ int openJPG(JPGReader* reader, const char *filename) {
     case 0xC4: decodeDHT(reader); break;
     case 0xDB: decodeDQT(reader); break;
     case 0xDD: decodeDRI(reader); break;
-    case 0xDA: decodeScanCPU(reader); break;
+    case 0xDA: decodeScanGPU(reader); break;
     case 0xFE: skipBlock(reader); break;
     case 0xD9: break;
     default:

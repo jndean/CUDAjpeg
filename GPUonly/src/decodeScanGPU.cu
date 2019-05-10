@@ -1,13 +1,13 @@
+#include<stdio.h>
+#include<string.h>
+#include<time.h>
+
+#include<format.h>
 #include<decodeScanGPU.h>
 
 
-__host__ void unstuffBuffer(unsigned char* dst, unsigned char* src, unsigned int len) {
-  
-}
-
-
 // This only shows the bits, but doesn't move past them //
-__host__ int showBits(JPGReader* jpg, int num_bits){
+__host__ static int showBits(JPGReader* jpg, int num_bits){
   unsigned char newbyte;
   if(!num_bits) return 0;
 
@@ -50,14 +50,14 @@ __host__ int showBits(JPGReader* jpg, int num_bits){
 
 
 // Show the bits AND move past them //
-__host__ int getBits(JPGReader* jpg, int num_bits){
+__host__ static int getBits(JPGReader* jpg, int num_bits){
   int res = showBits(jpg, num_bits);
   jpg->num_bufbits -= num_bits;
   return res;
 }
 
 
-__host__ int getVLC(JPGReader* jpg, DhtVlc* vlc_table, unsigned char* code){
+__host__ static int getVLC(JPGReader* jpg, DhtVlc* vlc_table, unsigned char* code){
   int symbol = showBits(jpg, 16);
   DhtVlc vlc = vlc_table[symbol];
   if(!vlc.num_bits) {
@@ -75,7 +75,7 @@ __host__ int getVLC(JPGReader* jpg, DhtVlc* vlc_table, unsigned char* code){
 }
 
 
-__host__ void decodeBlock(JPGReader* jpg, ColourChannel* channel){
+__host__ static void decodeBlock(JPGReader* jpg, ColourChannel* channel){
   unsigned char code = 0;
   int value, coef = 0;
   int* block = channel->working_space_pos;
@@ -97,7 +97,7 @@ __host__ void decodeBlock(JPGReader* jpg, ColourChannel* channel){
 }
 
 
-__host__ void decodeScanCPU(JPGReader* jpg){
+__host__ void decodeScanGPU(JPGReader* jpg){
   unsigned char *pos = jpg->pos;
   unsigned int header_len = read16(pos);
   if (pos + header_len >= jpg->end) THROW(SYNTAX_ERROR);
@@ -151,20 +151,4 @@ __host__ void decodeScanCPU(JPGReader* jpg){
     }
   }
 
-
-  /* -------------------- GPU iDCT -------------------- */
-  for (i = 0, channel = jpg->channels; i < jpg->num_channels; i++, channel++) {
-    cudaMemcpy(channel->device_working_space.mem, channel->working_space.mem,
-	       channel->working_space.size * sizeof(int), cudaMemcpyHostToDevice);
-    int num_blocks =
-      jpg->num_blocks_x * channel->samples_x * jpg->num_blocks_y * channel->samples_y;
-    int num_thread_blocks = (num_blocks + 7) >> 3;
-    int num_threads_per_block = 64;
-    iDCT_GPU<<<num_thread_blocks, num_threads_per_block>>>(channel->device_working_space.mem,
-							   channel->device_raw_pixels.mem,
-							   channel->stride,
-							   channel->samples_x,
-							   channel->samples_y,
-							   num_blocks);
-  }
 }

@@ -11,10 +11,8 @@ OBJECTS  := $(SOURCES:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
 
 CFLAGS   = -O3 -I${INCDIR}
 
-default: main.o format.o decodeScan.o pixelTransformGPU.o
+default: main.o format.o decodeScanGPU.o decodeScan.o pixelTransformGPU.o
 	nvcc ${CFLAGS} $^ -o ${TARGET}
-
-decodeScanCPU.o: pixelTransformGPU.o
 
 %.o: $(SRCDIR)/%.cu
 	nvcc $(CFLAGS) -c $< -o $@

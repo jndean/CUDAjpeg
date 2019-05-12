@@ -9,10 +9,37 @@
 
 
 __host__ JPGReader* newJPGReader() {
-  return (JPGReader*) calloc(1, sizeof(JPGReader));
+  JPGReader* reader;
+  if (!(reader = (JPGReader*) calloc(1, sizeof(JPGReader))) ||
+      cudaMalloc(&reader->device_vlc_tables, 4 * 65536 * sizeof(DhtVlc)) ||
+      cudaMalloc(&reader->device_dq_tables, 4*64)) {
+    delJPGReader(reader);
+    return NULL;
+  }
+  return reader;
 }
 
+
+__host__ void delJPGReader(JPGReader* reader) {
+  if (!reader) return;
+  if (reader->buf) free(reader->buf);
+  if (reader->device_vlc_tables) cudaFree(reader->device_vlc_tables);
+  if (reader->device_dq_tables) cudaFree(reader->device_dq_tables);
+  int i; ColourChannel *c;
+  for (i = 0, c = reader->channels; i < 3; i++, c++) {
+    if (c->pixels.mem) free(c->pixels.mem);
+    if (c->working_space.mem) free(c->working_space.mem);
+    if (c->raw_pixels.mem) free(c->raw_pixels.mem);
+    if (c->device_working_space.mem) cudaFree(c->device_working_space.mem);
+    if (c->device_raw_pixels.mem) cudaFree(c->device_raw_pixels.mem);
+  }
+  if (reader->pixels) free(reader->pixels);
+  free(reader);
+}
+
+
 __host__ void printError(JPGReader* reader) {
+  printf("Code: ");
   switch(reader->error){
   case NO_ERROR: printf("NO_ERROR"); break;
   case SYNTAX_ERROR: printf("SYNTAX_ERROR"); break;
@@ -20,9 +47,13 @@ __host__ void printError(JPGReader* reader) {
   case OOM_ERROR: printf("OOM_ERROR"); break;
   case CUDA_MEM_ERROR: printf("CUDA_MEM_ERROR"); break;
   case FILE_ERROR: printf("FILE_ERROR"); break;
+  case CUDA_KERNEL_LAUNCH_ERROR: printf("CUDA_KERNEL_LAUNCH_ERROR"); break;
   case PROGRAMMER_ERROR: printf("PROGRAMMER_ERROR"); break;
-  default: printf("[That's not a real error code]");
+  default: printf("[Unrecognised error code: %d]", reader->error);
   }
+  if (reader->error_func) printf(" Func: %s", reader->error_func);
+  if (reader->error_file) printf(" File: %s", reader->error_file);
+  if (reader->error_line) printf(" Line: %d", reader->error_line);
 }
 
 
@@ -45,7 +76,7 @@ __host__ int ensureMemSize(ManagedUCharMem* mem, const unsigned int new_size, in
     mem->mem = (unsigned char*) malloc(new_size);
     break;
   case USE_CUDA_MALLOC:
-    if (cudaMalloc(&mem->mem, new_size))
+    if (cudaMalloc(&mem->mem, new_size) != cudaSuccess)
       return CUDA_MEM_ERROR;
     break;
   default:
@@ -75,7 +106,37 @@ __host__ int ensureMemSize(ManagedIntMem* mem, const unsigned int new_size, int 
     mem->mem = (int*) malloc(new_size * sizeof(int));
     break;
   case USE_CUDA_MALLOC:
-    if (cudaMalloc(&mem->mem, new_size * sizeof(int)))
+    if (cudaMalloc(&mem->mem, new_size * sizeof(int)) != cudaSuccess)
+      return CUDA_MEM_ERROR;
+    break;
+  default:
+    return PROGRAMMER_ERROR;
+  }
+  if (!(mem->mem)) return OOM_ERROR;
+  mem->max_size = new_size;
+  return NO_ERROR;
+}
+
+__host__ int ensureMemSize(ManagedShortMem* mem, const unsigned int new_size, int mode) {
+  mem->size = new_size;
+  if (mem->mem) {
+    if (new_size <= mem->max_size){
+      if (mode == USE_CALLOC) memset(mem->mem, 0, new_size * sizeof(short));
+      return NO_ERROR;
+    }
+    if (mode == USE_CUDA_MALLOC) cudaFree(mem->mem);
+    else free(mem->mem);
+    mem->mem = NULL;
+  }
+  switch (mode){
+  case USE_CALLOC:
+    mem->mem = (short*) calloc(new_size, sizeof(short));
+    break;
+  case USE_MALLOC:
+    mem->mem = (short*) malloc(new_size * sizeof(short));
+    break;
+  case USE_CUDA_MALLOC:
+    if (cudaMalloc(&mem->mem, new_size * sizeof(short)) != cudaSuccess)
       return CUDA_MEM_ERROR;
     break;
   default:
@@ -96,20 +157,24 @@ __host__ int openJPG(JPGReader* reader, const char *filename) {
   if (NULL == f) { error_val = FILE_ERROR; goto end; }
   fseek(f, 0, SEEK_END);
   size = ftell(f);
-  if ((size > reader->buf_max_size) || (!reader->buf)) {
-     if (reader->buf) free(reader->buf);
-    reader->buf = (unsigned char *) malloc(size);
-    if(!reader->buf) { error_val = OOM_ERROR; goto end; }
-    if (size > reader->buf_max_size)
-      reader->buf_max_size = size;
-  }
-  reader->buf_size = size;
-  if(error_val) goto end;
+  if (error_val = ensureMemSize(&reader->file_buf, size, USE_MALLOC))
+    goto end;
+  if (error_val = ensureMemSize(&reader->device_file_buf, size, USE_CUDA_MALLOC))
+    goto end;
+  if (error_val = ensureMemSize(&reader->device_buf_values, size * 8, USE_CUDA_MALLOC))
+    goto end;
+  if (error_val = ensureMemSize(&reader->device_jump_lengths, size * 8, USE_CUDA_MALLOC))
+    goto end;
+  if (error_val = ensureMemSize(&reader->device_run_lengths, size * 8, USE_CUDA_MALLOC))
+    goto end;
+  reader->buf = reader->file_buf.mem;
   fseek(f, 0, SEEK_SET);
   if(fread(reader->buf, 1, size, f) != size)
     { error_val = FILE_ERROR; goto end; }
   fclose(f);
   f=NULL;
+  cudaMemcpy(reader->device_file_buf.mem, reader->file_buf.mem,
+	     size, cudaMemcpyHostToDevice);
 
   // Magics //
   if((reader->buf[0]      != 0xFF) || (reader->buf[1]      != 0xD8) ||
@@ -118,7 +183,7 @@ __host__ int openJPG(JPGReader* reader, const char *filename) {
   }
 
   if (size < 6) {error_val = SYNTAX_ERROR; goto end;}
-  reader->end = reader->buf + size;
+  reader->end = reader->buf + size - 2; // Leave out EOF marker, already checked
   reader->pos = reader->buf + 2;
   reader->restart_interval = 0;
   reader->bufbits = 0;
@@ -129,7 +194,7 @@ __host__ int openJPG(JPGReader* reader, const char *filename) {
   
   // Main format block parsing loop //
   while(!reader->error){
-    if (reader->pos > reader->end - 2) {
+    if (reader->pos > reader->end) {
       reader->error = SYNTAX_ERROR;
       break;
     }
@@ -166,23 +231,6 @@ __host__ int openJPG(JPGReader* reader, const char *filename) {
   if (NULL != f) fclose(f);
   return error_val;
 }
-
-
-
-__host__ void delJPGReader(JPGReader* reader){
-  if (reader->buf) free(reader->buf);
-  int i; ColourChannel *c;
-  for(i = 0, c = reader->channels; i < 3; i++, c++){
-    if (c->pixels.mem) free(c->pixels.mem);
-    if (c->working_space.mem) free(c->working_space.mem);
-    if (c->raw_pixels.mem) free(c->raw_pixels.mem);
-    if(c->device_working_space.mem) cudaFree(c->device_working_space.mem);
-    if(c->device_raw_pixels.mem) cudaFree(c->device_raw_pixels.mem);
-  }
-  if(reader->pixels) free(reader->pixels);
-  free(reader);
-}
-
 
 
 __host__ void writeJPG(JPGReader* reader, const char* filename){
@@ -322,7 +370,7 @@ __host__ void decodeDHT(JPGReader* jpg){
   unsigned char* pos = jpg->pos;
   unsigned int block_len = read16(pos);
   unsigned char *block_end = pos + block_len;
-  if(block_end >= jpg->end) THROW(SYNTAX_ERROR);
+  if(block_end > jpg->end) THROW(SYNTAX_ERROR);
   pos += 2;
   
   while(pos < block_end){
@@ -358,13 +406,16 @@ __host__ void decodeDHT(JPGReader* jpg){
   
   if (pos != block_end) THROW(SYNTAX_ERROR);
   jpg->pos = block_end;
+
+  cudaMemcpy(jpg->device_vlc_tables, jpg->vlc_tables,
+	     4 * 65536 * sizeof(DhtVlc), cudaMemcpyHostToDevice);
 }
 
 
 __host__ void decodeDRI(JPGReader *jpg){
   unsigned int block_len = read16(jpg->pos);
   unsigned char *block_end = jpg->pos + block_len;
-  if ((block_len < 2) || (block_end >= jpg->end)) THROW(SYNTAX_ERROR);
+  if ((block_len < 2) || (block_end > jpg->end)) THROW(SYNTAX_ERROR);
   jpg->restart_interval = read16(jpg->pos + 2);
   jpg->pos = block_end; 
 }
@@ -373,7 +424,7 @@ __host__ void decodeDRI(JPGReader *jpg){
 __host__ void decodeDQT(JPGReader *jpg){
   unsigned int block_len = read16(jpg->pos);
   unsigned char *block_end = jpg->pos + block_len;
-  if (block_end >= jpg->end) THROW(SYNTAX_ERROR);
+  if (block_end > jpg->end) THROW(SYNTAX_ERROR);
   unsigned char *pos = jpg->pos + 2;
 
   while(pos + 65 <= block_end){
@@ -385,4 +436,7 @@ __host__ void decodeDQT(JPGReader *jpg){
   }
   if (pos != block_end) THROW(SYNTAX_ERROR);
   jpg->pos = block_end;
+  
+  cudaMemcpy(jpg->device_dq_tables, jpg->dq_tables,
+	     4 * 64, cudaMemcpyHostToDevice);
 }

@@ -10,6 +10,7 @@
 #define OOM_ERROR 3
 #define CUDA_MEM_ERROR 4
 #define FILE_ERROR 5
+#define CUDA_KERNEL_LAUNCH_ERROR 6
 #define PROGRAMMER_ERROR -1
 
 // Memory options for ensureMemSize //
@@ -18,7 +19,12 @@
 #define USE_CUDA_MALLOC 2
 
 
-#define THROW(e) do { jpg->error = e; return; } while (0)
+#define THROW(e) do { \
+    jpg->error = e; \
+    jpg->error_line = __LINE__; \
+    jpg->error_file = (char*)__FILE__; \
+    jpg->error_func = (char*)__func__; \
+    return; } while (0)
 
 
 typedef struct _DhtVlc
@@ -32,6 +38,12 @@ typedef struct _ManagedUCharMem
   unsigned char *mem;
   unsigned int size, max_size;
 } ManagedUCharMem;
+
+typedef struct _ManagedShortMem
+{
+  short *mem;
+  unsigned int size, max_size;
+} ManagedShortMem;
 
 typedef struct _ManagedIntMem
 {
@@ -59,26 +71,31 @@ typedef struct _ColourChannel
 
 typedef struct _JPGReader
 {
-  unsigned char *buf, *pos, *end;
-  unsigned int buf_size, buf_max_size;
+  // File buffer //
+  unsigned char *buf, *pos, *device_pos, *end;
+  //unsigned int buf_max_size;
+  unsigned int bufbits;
+  unsigned char num_bufbits;
+  // Imgage properties //
   unsigned short width, height;
   unsigned short num_blocks_x, num_blocks_y;
   unsigned short block_size_x, block_size_y;
   unsigned char num_channels;
-  int error;
+  int restart_interval;
   ColourChannel channels[3];
+  // Memory //
   unsigned char *pixels;
   int max_pixels_size;
   ManagedUCharMem device_pixels;
-  DhtVlc vlc_tables[4][65536];
-  unsigned char dq_tables[4][64];
-  int restart_interval;
-  unsigned int bufbits;
-  unsigned char num_bufbits;
-  int block_space[64];
+  DhtVlc vlc_tables[4][65536], *device_vlc_tables;
+  unsigned char dq_tables[4][64], *device_dq_tables;
+  ManagedUCharMem file_buf, device_file_buf;
+  ManagedShortMem device_buf_values;
+  ManagedUCharMem device_jump_lengths, device_run_lengths;
+  // Debug and error handling //
   clock_t time;
-  ManagedUCharMem scanned_buf;
-  ManagedUCharMem device_buf;
+  int error, error_line;
+  char *error_file, *error_func;
 } JPGReader;
 
 

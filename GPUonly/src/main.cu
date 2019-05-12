@@ -15,9 +15,6 @@ int main(int argc, char** argv){
     return EXIT_FAILURE;
   }
 
-  cudaSetDevice(1);
-  cudaDeviceReset();
-
   JPGReader* reader = newJPGReader();
   if (!reader) {
     fprintf(stderr, "Unable to create jpgreader, likely malloc failure\n");
@@ -28,6 +25,9 @@ int main(int argc, char** argv){
   if (!error) {
     const char* filename = (reader->num_channels == 1) ? "outfile.pgm" : "outfile.ppm";
     writeJPG(reader, filename);
+  } else {
+    printf("Failed to open jpg %s,\n    ", argv[1]);
+    printError(reader); printf("\n");
   }
   
   
@@ -40,13 +40,13 @@ int main(int argc, char** argv){
     error = openJPG(reader, argv[filename_id]);
     total_time += (clock() - start);
     if (error){
-      printf("Failed to open jpg %s, error code: ", argv[filename_id]);
+      printf("Failed to open jpg %s,\n    ", argv[filename_id]);
       printError(reader); printf("\n");
     }
     
     cumulative_time += reader->time;
   }
-
+  
   delJPGReader(reader);
   
   double t_pi = 1000.0 * (double) total_time / (n * CLOCKS_PER_SEC);

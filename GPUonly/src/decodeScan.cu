@@ -23,8 +23,6 @@ __host__ static int showBits(JPGReader* jpg, int num_bits){
     if (newbyte != 0xFF)
       continue;
 	
-    if(jpg->pos >= jpg->end)
-      goto error;
     
     // Handle byte stuffing //
     unsigned char follow_byte = *jpg->pos++;
@@ -100,7 +98,7 @@ __host__ static void decodeBlock(JPGReader* jpg, ColourChannel* channel){
 __host__ void decodeScanCPU(JPGReader* jpg){
   unsigned char *pos = jpg->pos;
   unsigned int header_len = read16(pos);
-  if (pos + header_len >= jpg->end) THROW(SYNTAX_ERROR);
+  if (pos + header_len > jpg->end) THROW(SYNTAX_ERROR);
   pos += 2;
 
   if (header_len < (4 + 2 * jpg->num_channels)) THROW(SYNTAX_ERROR);

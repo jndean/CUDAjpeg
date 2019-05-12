@@ -526,7 +526,8 @@ __host__ void upsampleChannelGPU(JPGReader* jpg, ColourChannel* channel) {
 								   in_width,
 								   channel->stride,
 								   xshift,
-								   yshift);*/
+								   yshift);
+    if (cudaGetLastError() != cudaSuccess) THROW(CUDA_KERNEL_LAUNCH_ERROR);*/
     
     int threads_per_block = 64;
     int num_blocks = (in_width * in_height) / threads_per_block;
@@ -536,18 +537,17 @@ __host__ void upsampleChannelGPU(JPGReader* jpg, ColourChannel* channel) {
 								 channel->width,
 								 xshift,
 								 yshift);
+    if (cudaGetLastError() != cudaSuccess) THROW(CUDA_KERNEL_LAUNCH_ERROR);
     
     channel->stride = channel->width;
     cudaMemcpy(channel->pixels.mem, channel->device_pixels.mem,
 	       channel->pixels.size, cudaMemcpyDeviceToHost);
-    //memset(channel->pixels.mem, 100, channel->pixels.size);
     
   } else {
     cudaMemcpy(channel->pixels.mem, channel->device_raw_pixels.mem,
 	       channel->pixels.size, cudaMemcpyDeviceToHost);
-
-   }
   }
+}
 
 __host__ void upsampleChannelCPU(JPGReader* jpg, ColourChannel* channel) {
 
@@ -599,6 +599,8 @@ __host__ void upsampleAndColourTransformGPU(JPGReader* jpg) {
 						    channels[0].width, channels[0].height,
 						    channels[0].stride,
 						    channels[1].width, channels[1].stride);
+    if (cudaGetLastError() != cudaSuccess) THROW(CUDA_KERNEL_LAUNCH_ERROR);
+    
     cudaMemcpy(jpg->pixels, jpg->device_pixels.mem,
 	       jpg->device_pixels.size, cudaMemcpyDeviceToHost);
    
@@ -635,6 +637,7 @@ __host__ void iDCT_resample_colourTransform(JPGReader* jpg) {
 							   channel->samples_x,
 							   channel->samples_y,
 							   num_blocks);
+    if (cudaGetLastError() != cudaSuccess) THROW(CUDA_KERNEL_LAUNCH_ERROR);
   }
   
   if (jpg->num_channels == 3) {
@@ -654,9 +657,10 @@ __host__ void iDCT_resample_colourTransform(JPGReader* jpg) {
 						    channels[0].width, channels[0].height,
 						    channels[0].stride,
 						    channels[1].width, channels[1].stride);
+    if (cudaGetLastError() != cudaSuccess) THROW(CUDA_KERNEL_LAUNCH_ERROR);
+    
     cudaMemcpy(jpg->pixels, jpg->device_pixels.mem,
 	       jpg->device_pixels.size, cudaMemcpyDeviceToHost);
-   
   } else {
     
     ColourChannel* c = &jpg->channels[0];

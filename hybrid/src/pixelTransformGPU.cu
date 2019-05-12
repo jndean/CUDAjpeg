@@ -610,10 +610,11 @@ __host__ void upsampleAndColourTransformGPU(JPGReader* jpg) {
 		 c->width, c->height,
 		 cudaMemcpyDeviceToHost);
   }
-  cudaDeviceSynchronize();
+  //cudaDeviceSynchronize();
   clock_t end_time = clock();
-  jpg->time += end_time - start_time;
+  //jpg->time += end_time - start_time;
 }
+
 
 __host__ void upsampleAndColourTransformHybrid(JPGReader* jpg) {
   int i;
@@ -662,9 +663,9 @@ __host__ void upsampleAndColourTransformHybrid(JPGReader* jpg) {
     channel->stride = channel->width;
   }
   
-  cudaDeviceSynchronize();
+  //cudaDeviceSynchronize();
   clock_t end_time = clock();
-  jpg->time += end_time - start_time;
+  //jpg->time += end_time - start_time;
 }
 
 

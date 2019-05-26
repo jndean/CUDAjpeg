@@ -11,8 +11,8 @@
 __host__ JPGReader* newJPGReader() {
   JPGReader* reader;
   if (!(reader = (JPGReader*) calloc(1, sizeof(JPGReader))) ||
-      cudaMalloc(&reader->device_vlc_tables, 4 * 65536 * sizeof(DhtVlc)) ||
-      cudaMalloc(&reader->device_dq_tables, 4*64)) {
+      (cudaMalloc(&reader->deviceAddresses.vlc_tables, 4 * 65536 * sizeof(DhtVlc)) != cudaSuccess) ||
+      (cudaMalloc(&reader->deviceAddresses.dq_tables, 4*64) != cudaSuccess)) {
     delJPGReader(reader);
     return NULL;
   }
@@ -22,10 +22,19 @@ __host__ JPGReader* newJPGReader() {
 
 __host__ void delJPGReader(JPGReader* reader) {
   if (!reader) return;
-  if (reader->buf) free(reader->buf);
-  if (reader->device_vlc_tables) cudaFree(reader->device_vlc_tables);
-  if (reader->device_dq_tables) cudaFree(reader->device_dq_tables);
-  int i; ColourChannel *c;
+  if (reader->pixels) free(reader->pixels);
+  if (reader->device_pixels.mem) cudaFree(reader->device_pixels.mem);
+  if (reader->file_buf.mem) free(reader->file_buf.mem);
+  if (reader->device_file_buf.mem) cudaFree(reader->device_file_buf.mem);
+  if (reader->deviceAddresses.vlc_tables) cudaFree(reader->deviceAddresses.vlc_tables);
+  if (reader->deviceAddresses.dq_tables) cudaFree(reader->deviceAddresses.dq_tables);
+  int i;
+  for (i = 0; i < 4; i++) {
+    if (reader->device_values[i].mem) cudaFree(reader->device_values[i].mem);
+    if (reader->device_jump_lengths[i].mem) cudaFree(reader->device_jump_lengths[i].mem);
+    if (reader->device_run_lengths[i].mem) cudaFree(reader->device_run_lengths[i].mem);
+  }
+  ColourChannel *c;
   for (i = 0, c = reader->channels; i < 3; i++, c++) {
     if (c->pixels.mem) free(c->pixels.mem);
     if (c->working_space.mem) free(c->working_space.mem);
@@ -33,7 +42,6 @@ __host__ void delJPGReader(JPGReader* reader) {
     if (c->device_working_space.mem) cudaFree(c->device_working_space.mem);
     if (c->device_raw_pixels.mem) cudaFree(c->device_raw_pixels.mem);
   }
-  if (reader->pixels) free(reader->pixels);
   free(reader);
 }
 
@@ -57,7 +65,7 @@ __host__ void printError(JPGReader* reader) {
 }
 
 
-template <class ManagedMem>
+template <class ManagedMem> // will be one of Managed(UChar|Short|Int)Mem
 __host__ int ensureMemSize(ManagedMem* mem, const unsigned int new_size, int mode) {
   mem->size = new_size;
   if (mem->mem) {
@@ -92,29 +100,35 @@ __host__ int ensureMemSize(ManagedMem* mem, const unsigned int new_size, int mod
 __host__ int openJPG(JPGReader* reader, const char *filename) {
   FILE* f = NULL;
   int error_val = NO_ERROR;
-  unsigned int size = 0;
+  unsigned int size = 0, size8;
   
   // Read file //
   f = fopen(filename, "r");
   if (NULL == f) { error_val = FILE_ERROR; goto end; }
   fseek(f, 0, SEEK_END);
   size = ftell(f);
-  if (error_val = ensureMemSize(&reader->file_buf, size, USE_MALLOC))
-    goto end;
-  if (error_val = ensureMemSize(&reader->device_file_buf, size, USE_CUDA_MALLOC))
-    goto end;
-  if (error_val = ensureMemSize(&reader->device_buf_values, size * 8, USE_CUDA_MALLOC))
-    goto end;
-  if (error_val = ensureMemSize(&reader->device_jump_lengths, size * 8, USE_CUDA_MALLOC))
-    goto end;
-  if (error_val = ensureMemSize(&reader->device_run_lengths, size * 8, USE_CUDA_MALLOC))
-    goto end;
+  size8 = size * 8;
+  if (error_val = ensureMemSize(&reader->file_buf, size, USE_MALLOC)) goto end;
   reader->buf = reader->file_buf.mem;
+  if (error_val = ensureMemSize(&reader->device_file_buf, size + 10, USE_CUDA_MALLOC))
+    goto end;
+  for (int i = 0; i < 4; i++) {
+    if (error_val = ensureMemSize(&reader->device_values[i], size8, USE_CUDA_MALLOC))
+      goto end;
+    if (error_val = ensureMemSize(&reader->device_jump_lengths[i], size8, USE_CUDA_MALLOC))
+      goto end;
+    if (error_val = ensureMemSize(&reader->device_run_lengths[i], size8, USE_CUDA_MALLOC))
+      goto end;
+    reader->deviceAddresses.raw_values[i] = reader->device_values[i].mem;
+    reader->deviceAddresses.jump_lengths[i] = reader->device_jump_lengths[i].mem;
+    reader->deviceAddresses.run_lengths[i] = reader->device_run_lengths[i].mem;
+  }
   fseek(f, 0, SEEK_SET);
   if(fread(reader->buf, 1, size, f) != size)
     { error_val = FILE_ERROR; goto end; }
   fclose(f);
   f=NULL;
+  // Start copying input data to GPU //
   cudaMemcpy(reader->device_file_buf.mem, reader->file_buf.mem,
 	     size, cudaMemcpyHostToDevice);
 
@@ -127,7 +141,10 @@ __host__ int openJPG(JPGReader* reader, const char *filename) {
   if (size < 6) {error_val = SYNTAX_ERROR; goto end;}
   reader->end = reader->buf + size - 2; // Leave out EOF marker, already checked
   reader->pos = reader->buf + 2;
+  // Shows decodeDRI hasn't been run yet //
   reader->restart_interval = 0;
+  // Shows decodeSOF hasn't been run yet //
+  reader->num_blocks_x = reader->num_blocks_y = 0;
   reader->bufbits = 0;
   reader->num_bufbits = 0;
   reader->time = 0;
@@ -158,7 +175,6 @@ __host__ int openJPG(JPGReader* reader, const char *filename) {
       if((reader->pos[-1] & 0xF0) == 0xE0) skipBlock(reader);
       else reader->error = SYNTAX_ERROR;
     }
-
     
     // Finished //
     if (reader->pos[-1] == 0xD9) {
@@ -189,8 +205,6 @@ __host__ void writeJPG(JPGReader* reader, const char* filename){
 }
 
 
-
-
 __host__ unsigned short read16(const unsigned char *pos) {
     return (pos[0] << 8) | pos[1];
 }
@@ -202,6 +216,7 @@ __host__ void skipBlock(JPGReader* jpg){
 
 
 __host__ void decodeSOF(JPGReader* jpg){
+  int error = NO_ERROR;
   unsigned char* block = jpg->pos;
   unsigned int block_len = read16(block);
   if(block_len < 9 || block + block_len >= jpg->end)
@@ -249,7 +264,7 @@ __host__ void decodeSOF(JPGReader* jpg){
   jpg->block_size_y = samples_y_max << 3;
   jpg->num_blocks_x = (jpg->width + jpg->block_size_x -1) / jpg->block_size_x;
   jpg->num_blocks_y = (jpg->height + jpg->block_size_y -1) / jpg->block_size_y;
- 
+
   for(i = 0, chan = jpg->channels; i < jpg->num_channels; i++, chan++){
     chan->width = (jpg->width * chan->samples_x + samples_x_max -1) / samples_x_max;
     chan->height = (jpg->height * chan->samples_y + samples_y_max -1) / samples_y_max;
@@ -262,7 +277,6 @@ __host__ void decodeSOF(JPGReader* jpg){
 
     // If more is needed, allocate CPU and/or GPU memory //
     unsigned int chan_size = chan->stride * jpg->num_blocks_y * (chan->samples_y << 3);
-    int error;
     if (error = ensureMemSize(&chan->working_space, chan_size, USE_CALLOC))
       THROW(error);
     if (error = ensureMemSize(&chan->device_working_space, chan_size, USE_CUDA_MALLOC))
@@ -280,6 +294,14 @@ __host__ void decodeSOF(JPGReader* jpg){
     if (error = ensureMemSize(&chan->pixels, chan_out_size, USE_MALLOC))
       THROW(error);
     if (error = ensureMemSize(&chan->device_pixels, chan_out_size, USE_CUDA_MALLOC))
+      THROW(error);
+  }
+
+    // This is here and in decodeDRI, as their order isn't guarenteed //
+  if (jpg->restart_interval) {
+    int num_blocks = jpg->num_blocks_y * jpg->num_blocks_x * jpg->num_channels;
+    int num_restarts = num_blocks / jpg->restart_interval;
+    if (error = ensureMemSize(&jpg->restart_marker_positions, num_restarts + 1, USE_MALLOC))
       THROW(error);
   }
   
@@ -349,7 +371,7 @@ __host__ void decodeDHT(JPGReader* jpg){
   if (pos != block_end) THROW(SYNTAX_ERROR);
   jpg->pos = block_end;
 
-  cudaMemcpy(jpg->device_vlc_tables, jpg->vlc_tables,
+  cudaMemcpy(jpg->deviceAddresses.vlc_tables, jpg->vlc_tables,
 	     4 * 65536 * sizeof(DhtVlc), cudaMemcpyHostToDevice);
 }
 
@@ -359,6 +381,17 @@ __host__ void decodeDRI(JPGReader *jpg){
   unsigned char *block_end = jpg->pos + block_len;
   if ((block_len < 2) || (block_end > jpg->end)) THROW(SYNTAX_ERROR);
   jpg->restart_interval = read16(jpg->pos + 2);
+
+  // This is here and in decodeSOF, as their order isn't guarenteed //
+  if (jpg->num_blocks_x) {
+    int error;
+    int num_blocks = jpg->num_blocks_y * jpg->num_blocks_x * jpg->num_channels;
+    int num_restarts = num_blocks / jpg->restart_interval;
+    if (error = ensureMemSize(&jpg->restart_marker_positions, num_restarts + 1, USE_MALLOC))
+      THROW(error);
+    printf(" ## %d, %d, %d ## \n", num_blocks, jpg->restart_interval, num_restarts);
+  }
+  
   jpg->pos = block_end; 
 }
 
@@ -379,6 +412,6 @@ __host__ void decodeDQT(JPGReader *jpg){
   if (pos != block_end) THROW(SYNTAX_ERROR);
   jpg->pos = block_end;
   
-  cudaMemcpy(jpg->device_dq_tables, jpg->dq_tables,
+  cudaMemcpy(jpg->deviceAddresses.dq_tables, jpg->dq_tables,
 	     4 * 64, cudaMemcpyHostToDevice);
 }

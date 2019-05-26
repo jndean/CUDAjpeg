@@ -9,7 +9,7 @@
 
 
 int main(int argc, char** argv){
-  
+
   if(argc < 2) {
     fprintf(stderr, "USAGE: %s filename.jpg ...\n", argv[0]);
     return EXIT_FAILURE;

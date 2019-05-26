@@ -9,7 +9,6 @@
 
 
 __host__ static void unstuffBuf(JPGReader *jpg) {
-  clock_t start_t = clock();
   unsigned char next_val, *src, *dst, *buf = jpg->pos;
   for (src=buf, dst=buf; src < jpg->end;) {
     if((*dst++ = *src++) != 0xFF) continue;
@@ -22,8 +21,6 @@ __host__ static void unstuffBuf(JPGReader *jpg) {
   // Put an EOF marker at the new end
   *dst++ = 0xFF;
   *dst++ = 0xD9;
-  clock_t end_t = clock();
-  jpg->time += end_t - start_t;
 }
 
 
@@ -47,6 +44,7 @@ __host__ static int getBits(JPGReader* jpg, int num_bits) {
   return res;
 }
 
+static int tmpval;
 
 __host__ static int getVLC(JPGReader* jpg, DhtVlc* vlc_table, unsigned char* code) {
   int symbol = showBits(jpg, 16);
@@ -58,7 +56,7 @@ __host__ static int getVLC(JPGReader* jpg, DhtVlc* vlc_table, unsigned char* cod
   jpg->num_bufbits -= vlc.num_bits;  
   if(code) *code = vlc.tuple;
   unsigned char num_bits = vlc.tuple & 0x0F;
-  if (!num_bits) return 0;
+  if (!num_bits) {tmpval += vlc.num_bits; return 0;}
   int value = getBits(jpg, num_bits);
   if (value < (1 << (num_bits - 1))) {
     value += ((-1) << num_bits) + 1;
@@ -66,6 +64,8 @@ __host__ static int getVLC(JPGReader* jpg, DhtVlc* vlc_table, unsigned char* cod
     tmp += ((-1) << num_bits) + 1;
     value = tmp;*/
   }
+  printf("key %d\tsymbits %d\tvalbits %d\tval %d\tpos %d\n", (symbol >> 16) & 0xFF, vlc.num_bits, num_bits, value, tmpval);
+  tmpval += vlc.num_bits + num_bits;
   return value;  
 }
 
@@ -119,32 +119,122 @@ __host__ void decodeScanGPU(JPGReader* jpg) {
   int restart_interval = jpg->restart_interval;
   if (!restart_interval) {
     
-    /*jpg->device_pos = jpg->device_file_buf.mem + (jpg->pos - jpg->buf);
+    jpg->device_pos = jpg->device_file_buf.mem + (jpg->pos - jpg->buf);
     int num_threads = (jpg->end - jpg->pos) * 8; // One thread per bit-position
-    int threads_per_block = 256;
+    int threads_per_block = 128;
     int num_blocks = (num_threads + threads_per_block - 1) / threads_per_block;
+    clock_t start = clock();
     huffmanDecode_kernel<<<num_blocks, threads_per_block>>>(jpg->device_pos,
-								num_threads,
-								jpg->device_buf_values.mem,
-								jpg->device_jump_lengths.mem,
-								jpg->device_run_lengths.mem,
-								jpg->device_vlc_tables);
-								if (cudaGetLastError() != cudaSuccess) THROW(CUDA_KERNEL_LAUNCH_ERROR);*/
+							    num_threads,
+							    jpg->deviceAddresses);
+    if (cudaGetLastError() != cudaSuccess) THROW(CUDA_KERNEL_LAUNCH_ERROR);
+    cudaDeviceSynchronize();
+    clock_t end = clock();
+    jpg->time += end - start;
+
+
+    /*unsigned char tmp_ac_run_len[800];
+    unsigned char tmp_dc_run_len[800];
+    unsigned char tmp_ac_jump_len[800];
+    unsigned char tmp_dc_jump_len[800];
+    unsigned char Ctmp_ac_run_len[800];
+    unsigned char Ctmp_dc_run_len[800];
+    unsigned char Ctmp_ac_jump_len[800];
+    unsigned char Ctmp_dc_jump_len[800];
+    cudaMemcpy(&tmp_ac_run_len, jpg->device_run_lengths[jpg->channels[0].ac_id].mem,
+	       800, cudaMemcpyDeviceToHost);    
+    cudaMemcpy(&tmp_dc_run_len, jpg->device_run_lengths[jpg->channels[0].dc_id].mem,
+	       800, cudaMemcpyDeviceToHost);
+    cudaMemcpy(&tmp_ac_jump_len, jpg->device_jump_lengths[jpg->channels[0].ac_id].mem,
+	       800, cudaMemcpyDeviceToHost);    
+    cudaMemcpy(&tmp_dc_jump_len, jpg->device_jump_lengths[jpg->channels[0].dc_id].mem,
+	       800, cudaMemcpyDeviceToHost);
+    cudaMemcpy(&Ctmp_ac_run_len, jpg->device_run_lengths[jpg->channels[1].ac_id].mem,
+	       800, cudaMemcpyDeviceToHost);    
+    cudaMemcpy(&Ctmp_dc_run_len, jpg->device_run_lengths[jpg->channels[1].dc_id].mem,
+	       800, cudaMemcpyDeviceToHost);
+    cudaMemcpy(&Ctmp_ac_jump_len, jpg->device_jump_lengths[jpg->channels[1].ac_id].mem,
+	       800, cudaMemcpyDeviceToHost);    
+    cudaMemcpy(&Ctmp_dc_jump_len, jpg->device_jump_lengths[jpg->channels[1].dc_id].mem,
+	       800, cudaMemcpyDeviceToHost);
     
+       
+    int position = 0;
+    int coeff = 1;
+    printf("%d, %d, (pos %d) (jump %d)\n", 0, tmp_dc_run_len[position], position,
+	   tmp_dc_jump_len[position]);
+    //coeff += tmp_dc_run_len[0];
+    position += tmp_dc_jump_len[0];
+    for(i = 0; i < 60; i++){
+      printf("%d, %d, (pos %d)\n", coeff, tmp_ac_run_len[position], position);
+      if (20 == tmp_ac_run_len[position]) {
+	position += tmp_ac_jump_len[position];
+	break;
+      }
+      coeff += tmp_ac_run_len[position];
+      position += tmp_ac_jump_len[position];
+    }
     
-    for (int block_y = 0; block_y < jpg->num_blocks_y; block_y++){
-      for (int block_x = 0; block_x < jpg->num_blocks_x; block_x++){
+    coeff = 1;
+    printf("%d, %d, (pos %d) (jump %d)\n", 0, Ctmp_dc_run_len[position], position,
+	   Ctmp_dc_jump_len[position]);
+    position += Ctmp_dc_jump_len[position];
+    for(i = 0; (i < 60 && coeff != 64); i++){
+      printf("%d, %d, (pos %d) (jump %d)\n", coeff, Ctmp_ac_run_len[position], position,
+	   Ctmp_ac_jump_len[position]);
+      if (20 == Ctmp_ac_run_len[position]) {
+	position += Ctmp_ac_jump_len[position];
+	break;
+      }
+      coeff += Ctmp_ac_run_len[position];
+      position += Ctmp_ac_jump_len[position];
+    }
+
+    cudaMemcpy(&Ctmp_ac_run_len, jpg->device_run_lengths[jpg->channels[2].ac_id].mem,
+	       800, cudaMemcpyDeviceToHost);    
+    cudaMemcpy(&Ctmp_dc_run_len, jpg->device_run_lengths[jpg->channels[2].dc_id].mem,
+	       800, cudaMemcpyDeviceToHost);
+    cudaMemcpy(&Ctmp_ac_jump_len, jpg->device_jump_lengths[jpg->channels[2].ac_id].mem,
+	       800, cudaMemcpyDeviceToHost);    
+    cudaMemcpy(&Ctmp_dc_jump_len, jpg->device_jump_lengths[jpg->channels[2].dc_id].mem,
+	       800, cudaMemcpyDeviceToHost);
+    coeff = 1;
+    printf("%d, %d, (pos %d) (jump %d)\n", 0, Ctmp_dc_run_len[position], position,
+	   Ctmp_dc_jump_len[position]);
+    position += Ctmp_dc_jump_len[position];
+    for(i = 0; (i < 60 && coeff != 64); i++){
+      printf("%d, %d, (pos %d) (jump %d)\n", coeff, Ctmp_ac_run_len[position], position,
+	   Ctmp_ac_jump_len[position]);
+      if (20 == Ctmp_ac_run_len[position]) {
+	position += Ctmp_ac_jump_len[position];
+	break;
+      }
+      coeff += Ctmp_ac_run_len[position];
+      position += Ctmp_ac_jump_len[position];
+    }
+    printf("\n--------------------\n");
+    tmpval = 0;*/
+    
+    for (int block_y = 0; block_y < jpg->num_blocks_y; block_y++) {
+      for (int block_x = 0; block_x < jpg->num_blocks_x; block_x++) {
 	// Loop over all channels //
-	for (i = 0, channel = jpg->channels; i < jpg->num_channels; i++, channel++){
+	for (i = 0, channel = jpg->channels; i < jpg->num_channels; i++, channel++) {
 	  // Loop over samples in block //
-	  for (int sample_y = 0; sample_y < channel->samples_y; ++sample_y){
-	    for (int sample_x = 0; sample_x < channel->samples_x; ++sample_x){
+	  for (int sample_y = 0; sample_y < channel->samples_y; ++sample_y) {
+	    for (int sample_x = 0; sample_x < channel->samples_x; ++sample_x) {
 	      decodeBlock(jpg, channel);
+	      //THROW(PROGRAMMER_ERROR);
 	      if (jpg->error) return;
-	    }}}}}
+	    }
+	  }
+	}
+	THROW(PROGRAMMER_ERROR);
+      }
+    }
     
   } else {
 
+    restartMarkerScan(jpg);
     int restart_count = restart_interval;
     int next_restart_index = 0;
     

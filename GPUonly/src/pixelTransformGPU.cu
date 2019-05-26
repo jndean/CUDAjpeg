@@ -624,6 +624,7 @@ __host__ void iDCT_resample_colourTransform(JPGReader* jpg) {
 
   int i;
   ColourChannel *channel;
+  // Do the iDCT for each channel //
   for (i = 0, channel = jpg->channels; i < jpg->num_channels; i++, channel++) {
     cudaMemcpy(channel->device_working_space.mem, channel->working_space.mem,
 	       channel->working_space.size * sizeof(int), cudaMemcpyHostToDevice);
@@ -639,7 +640,8 @@ __host__ void iDCT_resample_colourTransform(JPGReader* jpg) {
 							   num_blocks);
     if (cudaGetLastError() != cudaSuccess) THROW(CUDA_KERNEL_LAUNCH_ERROR);
   }
-  
+
+  // Do the colourspace transform //
   if (jpg->num_channels == 3) {
 
     unsigned int xshift = 0, yshift = 0;

@@ -57,11 +57,12 @@ __host__ void printError(JPGReader* reader) {
 }
 
 
-__host__ int ensureMemSize(ManagedUCharMem* mem, const unsigned int new_size, int mode) {
+template <class ManagedMem>
+__host__ int ensureMemSize(ManagedMem* mem, const unsigned int new_size, int mode) {
   mem->size = new_size;
   if (mem->mem) {
     if (new_size <= mem->max_size){
-      if (mode == USE_CALLOC) memset(mem->mem, 0, new_size);
+      if (mode == USE_CALLOC) memset(mem->mem, 0, new_size * sizeof(*mem->mem));
       return NO_ERROR;
     }
     if (mode == USE_CUDA_MALLOC) cudaFree(mem->mem);
@@ -70,13 +71,13 @@ __host__ int ensureMemSize(ManagedUCharMem* mem, const unsigned int new_size, in
   }
   switch (mode){
   case USE_CALLOC:
-    mem->mem = (unsigned char*) calloc(new_size, 1);
+    mem->mem = (decltype(mem->mem)) calloc(new_size, sizeof(*mem->mem));
     break;
   case USE_MALLOC:
-    mem->mem = (unsigned char*) malloc(new_size);
+    mem->mem = (decltype(mem->mem)) malloc(new_size * sizeof(*mem->mem));
     break;
   case USE_CUDA_MALLOC:
-    if (cudaMalloc(&mem->mem, new_size) != cudaSuccess)
+    if (cudaMalloc(&mem->mem, new_size * sizeof(*mem->mem)) != cudaSuccess)
       return CUDA_MEM_ERROR;
     break;
   default:
@@ -87,65 +88,6 @@ __host__ int ensureMemSize(ManagedUCharMem* mem, const unsigned int new_size, in
   return NO_ERROR;
 }
 
-__host__ int ensureMemSize(ManagedIntMem* mem, const unsigned int new_size, int mode) {
-  mem->size = new_size;
-  if (mem->mem) {
-    if (new_size <= mem->max_size){
-      if (mode == USE_CALLOC) memset(mem->mem, 0, new_size * sizeof(int));
-      return NO_ERROR;
-    }
-    if (mode == USE_CUDA_MALLOC) cudaFree(mem->mem);
-    else free(mem->mem);
-    mem->mem = NULL;
-  }
-  switch (mode){
-  case USE_CALLOC:
-    mem->mem = (int*) calloc(new_size, sizeof(int));
-    break;
-  case USE_MALLOC:
-    mem->mem = (int*) malloc(new_size * sizeof(int));
-    break;
-  case USE_CUDA_MALLOC:
-    if (cudaMalloc(&mem->mem, new_size * sizeof(int)) != cudaSuccess)
-      return CUDA_MEM_ERROR;
-    break;
-  default:
-    return PROGRAMMER_ERROR;
-  }
-  if (!(mem->mem)) return OOM_ERROR;
-  mem->max_size = new_size;
-  return NO_ERROR;
-}
-
-__host__ int ensureMemSize(ManagedShortMem* mem, const unsigned int new_size, int mode) {
-  mem->size = new_size;
-  if (mem->mem) {
-    if (new_size <= mem->max_size){
-      if (mode == USE_CALLOC) memset(mem->mem, 0, new_size * sizeof(short));
-      return NO_ERROR;
-    }
-    if (mode == USE_CUDA_MALLOC) cudaFree(mem->mem);
-    else free(mem->mem);
-    mem->mem = NULL;
-  }
-  switch (mode){
-  case USE_CALLOC:
-    mem->mem = (short*) calloc(new_size, sizeof(short));
-    break;
-  case USE_MALLOC:
-    mem->mem = (short*) malloc(new_size * sizeof(short));
-    break;
-  case USE_CUDA_MALLOC:
-    if (cudaMalloc(&mem->mem, new_size * sizeof(short)) != cudaSuccess)
-      return CUDA_MEM_ERROR;
-    break;
-  default:
-    return PROGRAMMER_ERROR;
-  }
-  if (!(mem->mem)) return OOM_ERROR;
-  mem->max_size = new_size;
-  return NO_ERROR;
-}
 
 __host__ int openJPG(JPGReader* reader, const char *filename) {
   FILE* f = NULL;

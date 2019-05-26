@@ -64,7 +64,7 @@ __host__ static int getVLC(JPGReader* jpg, DhtVlc* vlc_table, unsigned char* cod
     tmp += ((-1) << num_bits) + 1;
     value = tmp;*/
   }
-  printf("key %d\tsymbits %d\tvalbits %d\tval %d\tpos %d\n", (symbol >> 16) & 0xFF, vlc.num_bits, num_bits, value, tmpval);
+  //printf("key %d\tsymbits %d\tvalbits %d\tval %d\tpos %d\n", (symbol >> 16) & 0xFF, vlc.num_bits, num_bits, value, tmpval);
   tmpval += vlc.num_bits + num_bits;
   return value;  
 }
@@ -228,7 +228,7 @@ __host__ void decodeScanGPU(JPGReader* jpg) {
 	    }
 	  }
 	}
-	THROW(PROGRAMMER_ERROR);
+	//THROW(PROGRAMMER_ERROR);
       }
     }
     

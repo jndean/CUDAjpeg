@@ -100,8 +100,6 @@ typedef struct _JPGReader
 
 
 __host__ unsigned short read16(const unsigned char *pos);
-__host__ int ensureMemSize(ManagedUCharMem* mem, const unsigned int new_size, int mode);
-__host__ int ensureMemSize(ManagedIntMem* mem, const unsigned int new_size, int mode);
 __host__ void delJPGReader(JPGReader* reader);
 __host__ JPGReader* newJPGReader();
 __host__ int openJPG(JPGReader* reader, const char* filename);

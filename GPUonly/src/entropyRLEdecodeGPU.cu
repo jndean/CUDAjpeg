@@ -40,7 +40,7 @@ __global__ void huffmanDecode_kernel(HuffmanDecode_args args) {
     }
     
     if (num_value_bits) {
-      short value = bits >> (64 - bit_pos - total_num_bits);
+      short value = bits >> (40 - bit_pos - total_num_bits);
       value &= (1 << num_value_bits) - 1;
       if (value < (1 << (num_value_bits - 1)))
 	value += ((-1) << num_value_bits) + 1;
@@ -65,7 +65,7 @@ __global__ void huffmanDecode_kernel(HuffmanDecode_args args) {
     
     if (num_value_bits) {
       // Get the value following the runlength tuple //
-      short value = bits >> (64 - bit_pos - total_num_bits);
+      short value = bits >> (40 - bit_pos - total_num_bits);
       value &= (1 << num_value_bits) - 1;
       if (value < (1 << (num_value_bits - 1)))
 	value += ((-1) << num_value_bits) + 1;

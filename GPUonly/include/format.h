@@ -69,19 +69,10 @@ typedef struct _ColourChannel
 } ColourChannel;
 
 
-typedef struct _DeviceAddressBook
-{
-  DhtVlc *vlc_tables;
-  unsigned char *dq_tables;
-  unsigned char *jump_lengths[4], *run_lengths[4];
-  short *raw_values[4];
-} DeviceAddressBook;
-
-
 typedef struct _JPGReader
 {
   // File buffer pointers (None of these own the memory) //
-  unsigned char *buf, *pos, *device_pos, *end;
+  unsigned char *buf, *pos, *end;
   //unsigned int buf_max_size;
   unsigned int bufbits;
   unsigned char num_bufbits;
@@ -96,18 +87,17 @@ typedef struct _JPGReader
   unsigned char *pixels;
   int max_pixels_size;
   ManagedUCharMem device_pixels;
-  DhtVlc vlc_tables[4][65536];
+  DhtVlc *vlc_tables[4], *vlc_tables_backup[4];
+  DhtVlc *device_vlc_tables[4], *device_vlc_tables_backup[4];
   unsigned char dq_tables[4][64];
   ManagedUCharMem file_buf, device_file_buf;
-  ManagedShortMem device_values[4];
-  ManagedUCharMem device_jump_lengths[4], device_run_lengths[4];
-  ManagedIntMem restart_marker_positions;
+  ManagedShortMem device_values[4], device_jump_lengths[4];
+  ManagedUCharMem device_run_lengths[4];
+  //ManagedIntMem restart_marker_positions;
   // Debug and error handling //
   clock_t time;
   int error, error_line;
   char *error_file, *error_func;
-  // Store block of addresses for easy copying to device //
-  DeviceAddressBook deviceAddresses;
 } JPGReader;
 
 __host__ unsigned short read16(const unsigned char *pos);

@@ -92,7 +92,8 @@ typedef struct _JPGReader
   unsigned char dq_tables[4][64];
   ManagedUCharMem file_buf, device_file_buf;
   ManagedShortMem device_values[4], device_jump_lengths[4];
-  ManagedUCharMem device_run_lengths[4];
+  ManagedUCharMem device_run_lengths[2];
+  ManagedShortMem device_block_lengths[2];
   //ManagedIntMem restart_marker_positions;
   // Debug and error handling //
   clock_t time;

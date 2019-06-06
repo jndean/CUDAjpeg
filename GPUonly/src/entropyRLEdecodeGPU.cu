@@ -34,12 +34,10 @@ __global__ void huffmanDecode_kernel(HuffmanDecode_args args) {
     args.jump_lengths[table_id][pos] = total_num_bits;
       
     // Invalid symbol marked by 0 //
-    if (!num_symbol_bits) {
+    if (!num_symbol_bits) 
       args.jump_lengths[table_id][pos] = 0;
-      continue;
-    }
     
-    if (num_value_bits) {
+    else if (num_value_bits) {
       short value = bits >> (40 - bit_pos - total_num_bits);
       value &= (1 << num_value_bits) - 1;
       if (value < (1 << (num_value_bits - 1)))
@@ -56,7 +54,11 @@ __global__ void huffmanDecode_kernel(HuffmanDecode_args args) {
     num_value_bits = vlc.tuple & 0x0F;
     total_num_bits = num_symbol_bits + num_value_bits;
     unsigned char run_length = ((vlc.tuple >> 4) & 0x0F) + 1;
-      
+
+    if (pos == 963) {
+      printf("HERE symbits %d, valbits %d, runlen %d\n",
+	     num_symbol_bits, num_value_bits, run_length);
+    }
     // Invalid symbol marked by 0 //
     if (!num_symbol_bits) {
       args.jump_lengths[table_id][pos] = 0;
@@ -70,11 +72,11 @@ __global__ void huffmanDecode_kernel(HuffmanDecode_args args) {
       if (value < (1 << (num_value_bits - 1)))
 	value += ((-1) << num_value_bits) + 1;
       args.raw_values[table_id][pos] = value;
-      args.run_lengths[table_id][pos] = run_length;
+      args.run_lengths[tid][pos] = run_length;
       args.jump_lengths[table_id][pos] = total_num_bits;
       
     } else {
-      // Handle special cases //
+      
       if (run_length == 1) {
 	// EOB marked by flipping the sign of jump length //
 	args.jump_lengths[table_id][pos] = -total_num_bits;
@@ -83,7 +85,7 @@ __global__ void huffmanDecode_kernel(HuffmanDecode_args args) {
 	// The 16-consecutive-zeros case is covered by setting value=0 //
 	args.raw_values[table_id][pos] = 0;
 	args.jump_lengths[table_id][pos] = total_num_bits;
-	args.run_lengths[table_id][pos] = run_length;
+	args.run_lengths[tid][pos] = run_length;
       }
       else printf("GPU huffman decode error\n");
       // Eventually might add a way to handle an error here?
@@ -97,8 +99,63 @@ template __global__ void huffmanDecode_kernel<2>(HuffmanDecode_args args);
 
 
 template <int num_channel_types>
+__global__ void decodeBlockLengths_kernel(DecodeBlockLengths_args args) {
+
+  int position, block_len;
+  int pos = blockIdx.x * blockDim.x + threadIdx.x;
+  if (pos >= args.num_positions) return;
+
+  for (int channel_id = 0; channel_id < num_channel_types; channel_id++) {
+
+    // Decode the DC term //
+    short dc_jump = args.dc_jumps[channel_id][pos];
+    if (dc_jump == 0)
+      goto invalid_block;
+
+    position = pos + dc_jump;
+    if (position >= args.num_positions)
+      goto invalid_block;
+    block_len = 1;
+
+    // Decode subsequent AC terms //
+    while (block_len < 64) {
+      short ac_jump = args.ac_jumps[channel_id][position];
+      unsigned char run_len = args.run_lengths[channel_id][position];
+
+      if (ac_jump <= 0) {
+	if (ac_jump == 0)
+	  goto invalid_block;
+	position -= ac_jump;
+	if (position >= args.num_positions)   // rm these ifs later?
+	  goto invalid_block;
+	break; // EOB marker
+      }
+      
+      position += ac_jump;
+      block_len += run_len;
+      if (position >= args.num_positions)
+	goto invalid_block;
+    }
+
+    if (block_len <= 64) {
+      args.out_lengths[channel_id][pos] = position - pos;
+      continue;
+    } else
+      goto invalid_block;
+    
+  invalid_block:
+    args.out_lengths[channel_id][pos] = 0;
+  }
+  
+}
+template __global__ void decodeBlockLengths_kernel<1>(DecodeBlockLengths_args args);
+template __global__ void decodeBlockLengths_kernel<2>(DecodeBlockLengths_args args);
+
+
+/*
+template <int num_channel_types>
 __global__ void reduceJumpsAC_kernel(ReduceJumpsAC_args args) {
-  /* 
+  
   int pos = blockIdx.x * blockDim.x + threadIdx.x;
   if (pos >= args.num_positions) return;
 
@@ -109,73 +166,41 @@ __global__ void reduceJumpsAC_kernel(ReduceJumpsAC_args args) {
     unsigned char block_len = args.lengths_in[channel_id][pos];
     short jump = args.jumps_in[channel_id][pos];
 
-    if (block_len >= SMALLEST_MARKER_VAL) {
-      args.lengths_out[channel_id][pos] = block_len;
-      args.jumps_out[channel_id][pos] = 0;
+    if (jump <= 0) {
+      if (jump == 0) 
+	args.jumps_out[channel_id][pos] = 0; // Preserve invalid block
+      else {
+	args.jumps_out[channel_id][pos] = jump; // Preserve EOB
+	args.lengths_out[channel_id][pos] = block_len;
+      }
       continue;
     }
     
     int next_pos = pos + jump;
     if (next_pos >= args.num_positions) {
-      args.lengths_out[channel_id][pos] = INVALID_SYMBOL_MARKER;
+      args.jumps_out[channel_id][pos] = 0; // Mark invalid block
       continue;
     }
 
     short next_jump = args.jumps_in[channel_id][next_pos];
     unsigned char next_block_len = args.lengths_in[channel_id][pos];
-    if (next_block_len == INVALID_SYMBOL_MARKER) {
-      args.lengths_out[channel_id][pos] = INVALID_SYMBOL_MARKER;
-      continue;
-    } else if (next_block_len == EOB_MARKER) {
-      args.jumps_out[channel_id][pos] = jump;
-      args.lengths_out[channel_id][pos] = block_len;
+
+    if (next_jump == 0) {
+      args.jumps_out[channel_id][pos] = 0; // Mark invalid block
       continue;
     }
 
-    unsigned char both_block_len = block_len + next_block_len;
-    if (both_block_len >= 64) {
-      args.lengths_out[channel_id][pos] = INVALID_SYMBOL_MARKER;
-      continue;
-    }
-    args.lengths_out[channel_id][pos] = both_block_len;
+    unsigned char out_block_len = block_len + next_block_len;
+    // Propogate negative sign (EOB) on jumps
+    short out_jump = (next_jump < 0) ? next_jump - jump : next_jump + jump;
+
+    if (out_block_len > 64
+	args.jumps_out[channel_id][pos] = double_jump; 
+	args.lengths_out[channel_id][pos] = double_block_len;
+     
     
-    short double_jump = jump + next_jump;
-    args.jumps_out[channel_id][pos] = double_jump;
-    } */
+  }
 }
 template __global__ void reduceJumpsAC_kernel<1>(ReduceJumpsAC_args args);
 template __global__ void reduceJumpsAC_kernel<2>(ReduceJumpsAC_args args);
-
-
-
-template <int num_channel_types>
-__global__ void reduceJumpsDC_kernel(ReduceJumpsDC_args args) {
-  
-  int pos = blockIdx.x * blockDim.x + threadIdx.x;
-  if (pos >= args.num_positions) return;
-  /*
-  for (int channel_id = 0; channel_id < num_channel_types; channel_id++) {
-
-    short dc_jump = args.dc_jumps[channel_id][pos];
-    unsigned char dc_block_len = args.dc_lengths_in[channel_id][pos];
-    if (args.block_lengths[channel_id][pos] > 0) 
-      continue;
-
-    int ac_pos = pos + dc_jump;
-    if (ac_pos >= args.num_positions) {
-      args.block_lengths[pos] = INVALID_BLOCK_MARKER;
-      continue;
-    }
-    
-    unsigned char ac_length = args.ac_lengths[channel_id][ac_pos];
-    if (ac_length == INVALID_SYMBOL_MARKER) {
-      args.block_lengths[pos] = INVALID_BLOCK_MARKER;
-      continue;
-    }
-
-    if (ac_length == EOB_MARKER) {
-      
-    }
-
-    }*/
-}
+*/

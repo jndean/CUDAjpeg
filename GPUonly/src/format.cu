@@ -40,9 +40,12 @@ __host__ void delJPGReader(JPGReader* reader) {
   for (i = 0; i < 4; i++) {
     if (reader->device_values[i].mem) cudaFree(reader->device_values[i].mem);
     if (reader->device_jump_lengths[i].mem) cudaFree(reader->device_jump_lengths[i].mem);
-    if (reader->device_run_lengths[i].mem) cudaFree(reader->device_run_lengths[i].mem);
     if (reader->vlc_tables_backup[i]) free(reader->vlc_tables[i]);
     if (reader->device_vlc_tables_backup[i]) cudaFree(reader->device_vlc_tables_backup[i]);
+  }
+  for (i = 0; i < 2; i++) {
+    if (reader->device_run_lengths[i].mem) cudaFree(reader->device_run_lengths[i].mem);
+    if (reader->device_block_lengths[i].mem) cudaFree(reader->device_block_lengths[i].mem);
   }
   ColourChannel *c;
   for (i = 0, c = reader->channels; i < 3; i++, c++) {
@@ -127,17 +130,24 @@ __host__ int openJPG(JPGReader* reader, const char *filename) {
       goto end;
     if (error_val = ensureMemSize(&reader->device_jump_lengths[i], size8, USE_CUDA_MALLOC))
       goto end;
+  }
+  for (int i = 0; i < 2; i++) {
     if (error_val = ensureMemSize(&reader->device_run_lengths[i], size8, USE_CUDA_MALLOC))
+      goto end;
+    if (error_val = ensureMemSize(&reader->device_block_lengths[i], size8, USE_CUDA_MALLOC))
       goto end;
   }
   fseek(f, 0, SEEK_SET);
-  if(fread(reader->buf, 1, size, f) != size)
-    { error_val = FILE_ERROR; goto end; }
+  if(fread(reader->buf, 1, size, f) != size) {
+    error_val = FILE_ERROR;
+    goto end;
+  }
   fclose(f);
   f=NULL;
-// Start copying input data to GPU //
-  cudaMemcpy(reader->device_file_buf.mem, reader->file_buf.mem,
-	     size, cudaMemcpyHostToDevice);
+  
+  // Start copying input data to GPU //
+  //cudaMemcpy(reader->device_file_buf.mem, reader->file_buf.mem,
+  //	     size, cudaMemcpyHostToDevice);
 
   // Magics //
   if((reader->buf[0]      != 0xFF) || (reader->buf[1]      != 0xD8) ||

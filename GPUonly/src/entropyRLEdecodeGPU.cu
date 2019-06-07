@@ -55,10 +55,6 @@ __global__ void huffmanDecode_kernel(HuffmanDecode_args args) {
     total_num_bits = num_symbol_bits + num_value_bits;
     unsigned char run_length = ((vlc.tuple >> 4) & 0x0F) + 1;
 
-    if (pos == 963) {
-      printf("HERE symbits %d, valbits %d, runlen %d\n",
-	     num_symbol_bits, num_value_bits, run_length);
-    }
     // Invalid symbol marked by 0 //
     if (!num_symbol_bits) {
       args.jump_lengths[table_id][pos] = 0;
@@ -113,12 +109,14 @@ __global__ void decodeBlockLengths_kernel(DecodeBlockLengths_args args) {
       goto invalid_block;
 
     position = pos + dc_jump;
-    if (position >= args.num_positions)
-      goto invalid_block;
     block_len = 1;
 
     // Decode subsequent AC terms //
     while (block_len < 64) {
+      
+      if (position > args.num_positions)
+	goto invalid_block;
+      
       short ac_jump = args.ac_jumps[channel_id][position];
       unsigned char run_len = args.run_lengths[channel_id][position];
 
@@ -126,18 +124,18 @@ __global__ void decodeBlockLengths_kernel(DecodeBlockLengths_args args) {
 	if (ac_jump == 0)
 	  goto invalid_block;
 	position -= ac_jump;
-	if (position >= args.num_positions)   // rm these ifs later?
-	  goto invalid_block;
+	//if (position > args.num_positions)   // rm these ifs later?
+	//  goto invalid_block;
 	break; // EOB marker
       }
       
       position += ac_jump;
       block_len += run_len;
-      if (position >= args.num_positions)
-	goto invalid_block;
+      //if (position > args.num_positions)
+      //  goto invalid_block;
     }
 
-    if (block_len <= 64) {
+    if ((block_len <= 64) && (position <= args.num_positions)) {
       args.out_lengths[channel_id][pos] = position - pos;
       continue;
     } else

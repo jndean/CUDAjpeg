@@ -58,7 +58,7 @@ __host__ static int getVLC(JPGReader* jpg, DhtVlc* vlc_table, unsigned char* cod
   if(code) *code = vlc.tuple;
   unsigned char num_bits = vlc.tuple & 0x0F;
   if (!num_bits) {
-    printf("pos %d\tcoef %d\tsymbits %d\t EOB!\n", tmpval, tmpcoeff, vlc.num_bits);
+    //printf("pos %d\tcoef %d\tsymbits %d\t EOB!\n", tmpval, tmpcoeff, vlc.num_bits);
     tmpval += vlc.num_bits;
     return 0;}
   int value = getBits(jpg, num_bits);
@@ -68,8 +68,8 @@ __host__ static int getVLC(JPGReader* jpg, DhtVlc* vlc_table, unsigned char* cod
     tmp += ((-1) << num_bits) + 1;
     value = tmp;*/
   }
-  printf("pos %d\tcoef %d\tsymbits %d\tvalbits %d\tval %d\n", tmpval, tmpcoeff,
-	 vlc.num_bits, num_bits, value);
+  // printf("pos %d\tcoef %d\tsymbits %d\tvalbits %d\tval %d\n", tmpval, tmpcoeff,
+  //	 vlc.num_bits, num_bits, value);
   tmpval += vlc.num_bits + num_bits;
   return value;  
 }
@@ -230,7 +230,7 @@ __host__ void decodeScanGPU(JPGReader* jpg) {
 
     int position = 0;
     int coeff = 0;
-    printf("(pos: %d, coeff: %d) jump_len: %d, run_len: 1, val: %d\n",
+    /*printf("(pos: %d, coeff: %d) jump_len: %d, run_len: 1, val: %d\n",
 	   position, coeff, tmp_dc_jump_len[position], tmp_dc_val[position]);
     coeff += 1;
     position += tmp_dc_jump_len[position];
@@ -323,28 +323,47 @@ __host__ void decodeScanGPU(JPGReader* jpg) {
       if (Ctmp_ac_jump_len[position] == 0) printf("Error\n");
       coeff += Ctmp_ac_run_len[position];
       position += abs(Ctmp_ac_jump_len[position]);
+      }*/
+
+    short* tmp_block_lengths = (short*) malloc(num_threads * sizeof(short));
+    short* Ctmp_block_lengths = (short*) malloc(num_threads * sizeof(short));
+
+    cudaMemcpy(tmp_block_lengths, jpg->device_block_lengths[0].mem,
+	       num_threads * sizeof(short), cudaMemcpyDeviceToHost);
+    cudaMemcpy(Ctmp_block_lengths, jpg->device_block_lengths[1].mem,
+	       num_threads * sizeof(short), cudaMemcpyDeviceToHost);
+  
+    position = 0;
+    for (int block_y = 0; block_y < jpg->num_blocks_y; block_y++) {
+      for (int block_x = 0; block_x < jpg->num_blocks_x; block_x++) {
+
+	for (int sample_y = 0; sample_y < jpg->channels[0].samples_y; ++sample_y)
+	  for (int sample_x = 0; sample_x < jpg->channels[0].samples_x; ++sample_x) {
+            int val = tmp_block_lengths[position];
+	    if(val == 0) printf(" - Error at %d -\n", position);
+	    position += val;
+	  }
+	for (int sample_y = 0; sample_y < jpg->channels[1].samples_y; ++sample_y)
+	  for (int sample_x = 0; sample_x < jpg->channels[1].samples_x; ++sample_x) {
+	    int val = Ctmp_block_lengths[position]; 
+	    if(val == 0) printf(" - Error at %d -\n", position);
+	    position += val;
+	  }
+	for (int sample_y = 0; sample_y < jpg->channels[2].samples_y; ++sample_y)
+	  for (int sample_x = 0; sample_x < jpg->channels[2].samples_x; ++sample_x) {
+	    int val = Ctmp_block_lengths[position];
+	    if(val == 0) printf(" - Error at %d -\n", position);
+	    position += val;
+	  }
+      }
     }
 
-    short tmp_block_lengths[4000];
-    short Ctmp_block_lengths[4000];
-    cudaMemcpy(&tmp_block_lengths, jpg->device_block_lengths[0].mem,
-	       4000, cudaMemcpyDeviceToHost);
-    cudaMemcpy(&Ctmp_block_lengths, jpg->device_block_lengths[1].mem,
-	       4000, cudaMemcpyDeviceToHost);
+    printf("GPU final position: %d\n", position);
+    
+    
+    free(tmp_block_lengths);
+    free(Ctmp_block_lengths);
 
-    position = 0;
-    position += tmp_block_lengths[0]; printf("Position: %d\n", position);
-    position += Ctmp_block_lengths[position]; printf("Position: %d\n", position);
-    position += Ctmp_block_lengths[position]; printf("xPosition: %d\n", position);
-    position += tmp_block_lengths[position]; printf("Position: %d\n", position);
-    position += Ctmp_block_lengths[position]; printf("Position: %d\n", position);
-    position += Ctmp_block_lengths[position]; printf("xPosition: %d\n", position);
-    position += tmp_block_lengths[position]; printf("Position: %d\n", position);
-    position += Ctmp_block_lengths[position]; printf("Position: %d\n", position);
-    position += Ctmp_block_lengths[position]; printf("xPosition: %d\n", position);
-    
-    printf("------------------------------\n");    
-    
     tmpval = 0;
     
     for (int block_y = 0; block_y < jpg->num_blocks_y; block_y++) {
@@ -353,15 +372,16 @@ __host__ void decodeScanGPU(JPGReader* jpg) {
 	  for (int sample_y = 0; sample_y < channel->samples_y; ++sample_y) {
 	    for (int sample_x = 0; sample_x < channel->samples_x; ++sample_x) {
 	      decodeBlock(jpg, channel);
-	      printf("Position %d\n", tmpval);
 	      //THROW(PROGRAMMER_ERROR);
 	      if (jpg->error) return;
 	    }
 	  }
 	}
-	if (tmpval > 1500) THROW(PROGRAMMER_ERROR);
+	//if (tmpval > 1500) THROW(PROGRAMMER_ERROR);
       }
     }
+    printf("CPU final position: %d\n", tmpval);
+    printf("------------------------------\n");
 
     
     

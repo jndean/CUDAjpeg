@@ -124,22 +124,17 @@ __global__ void decodeBlockLengths_kernel(DecodeBlockLengths_args args) {
 	if (ac_jump == 0)
 	  goto invalid_block;
 	position -= ac_jump;
-	//if (position > args.num_positions)   // rm these ifs later?
-	//  goto invalid_block;
 	break; // EOB marker
       }
       
       position += ac_jump;
       block_len += run_len;
-      //if (position > args.num_positions)
-      //  goto invalid_block;
     }
 
     if ((block_len <= 64) && (position <= args.num_positions)) {
       args.out_lengths[channel_id][pos] = position - pos;
-      continue;
-    } else
-      goto invalid_block;
+      continue; // Done
+    }
     
   invalid_block:
     args.out_lengths[channel_id][pos] = 0;

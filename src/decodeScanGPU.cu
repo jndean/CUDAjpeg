@@ -151,42 +151,56 @@ __host__ void decodeScanGPU(JPGReader* jpg) {
   int restart_interval = jpg->restart_interval;
   if (!restart_interval) {
 
+    clock_t start = clock();
+    
     int num_threads = (jpg->end - jpg->pos) * 8; // One thread per bit-position
     int threads_per_block = 128;
     int num_blocks = (num_threads + threads_per_block - 1) / threads_per_block;
 
-    HuffmanDecode_args huff_args;
-    huff_args.in = jpg->device_file_buf.mem;
-    huff_args.num_threads = num_threads;
-    for (i = 0; i < 4; i++) {
-      huff_args.vlc_tables[i] = jpg->device_vlc_tables[i];
-      huff_args.jump_lengths[i] = jpg->device_jump_lengths[i].mem;
-      huff_args.raw_values[i] = jpg->device_values[i].mem;
-    }
-    for (i = 0; i < 2; i++)
-      huff_args.run_lengths[i] = jpg->device_run_lengths[i].mem;
-    clock_t start = clock();
-    if (jpg->num_channels == 3) 
-      huffmanDecode_kernel<2><<<num_blocks, threads_per_block>>>(huff_args);
-    else 
-      huffmanDecode_kernel<1><<<num_blocks, threads_per_block>>>(huff_args);
+    {
+      HuffmanDecode_args huff_args;
+      huff_args.in = jpg->device_file_buf.mem;
+      huff_args.num_threads = num_threads;
+      for (i = 0; i < 4; i++) {
+	huff_args.vlc_tables[i] = jpg->device_vlc_tables[i];
+	huff_args.jump_lengths[i] = jpg->device_jump_lengths[i].mem;
+	huff_args.raw_values[i] = jpg->device_values[i].mem;
+      }
+      for (i = 0; i < 2; i++)
+	huff_args.run_lengths[i] = jpg->device_run_lengths[i].mem;
+      if (jpg->num_channels == 3) 
+	huffmanDecode_kernel<2><<<num_blocks, threads_per_block>>>(huff_args);
+      else 
+	huffmanDecode_kernel<1><<<num_blocks, threads_per_block>>>(huff_args);
     
-    if (cudaGetLastError() != cudaSuccess) THROW(CUDA_KERNEL_LAUNCH_ERROR);
+      if (cudaGetLastError() != cudaSuccess) THROW(CUDA_KERNEL_LAUNCH_ERROR);
+    }
 
-    DecodeBlockLengths_args blocklen_args;
-    blocklen_args.num_positions = num_threads;
-    for (i = 0; i < 2; i++) {
-      blocklen_args.dc_jumps[i] = jpg->device_jump_lengths[i * 2].mem;
-      blocklen_args.ac_jumps[i] = jpg->device_jump_lengths[i * 2 + 1].mem;
-      blocklen_args.run_lengths[i] = jpg->device_run_lengths[i].mem;
-      blocklen_args.out_lengths[i] = jpg->device_block_lengths[i].mem;
+    {
+      DecodeBlockLengths_args blocklen_args;
+      blocklen_args.num_positions = num_threads;
+      blocklen_args.out_lengths[LUMINANCE] = jpg->device_block_lengths[LUMINANCE].mem;
+      blocklen_args.out_lengths[CHROMINANCE] = jpg->device_block_lengths[CHROMINANCE].mem;
+      for (i = 0; i < 2; i++) {
+	blocklen_args.dc_jumps[i] = jpg->device_jump_lengths[i * 2].mem;
+	blocklen_args.ac_jumps[i] = jpg->device_jump_lengths[i * 2 + 1].mem;
+	blocklen_args.run_lengths[i] = jpg->device_run_lengths[i].mem;
+      }
+      if (jpg->num_channels == 3) 
+	decodeBlockLengths_kernel<2><<<num_blocks, threads_per_block>>>(blocklen_args);
+      else
+	decodeBlockLengths_kernel<1><<<num_blocks, threads_per_block>>>(blocklen_args);
+      if (cudaGetLastError() != cudaSuccess) THROW(CUDA_KERNEL_LAUNCH_ERROR);
     }
-    if (jpg->num_channels == 3) 
-      decodeBlockLengths_kernel<2><<<num_blocks, threads_per_block>>>(blocklen_args);
-    else 
-      decodeBlockLengths_kernel<1><<<num_blocks, threads_per_block>>>(blocklen_args);
+
+    {
+      ReduceBlockLengthsStart_args startreduction_args;
+      startreduction_args.num_positions = num_threads;
+      startreduction_args.lengths_out = jpg->device_reduced_block_lengths.mem;
+      startreduction_args.lengths_in[LUMINANCE] = jpg->device_block_lengths[LUMINANCE].mem;
+      startreduction_args.lengths_in[CHROMINANCE] = jpg->device_block_lengths[CHROMINANCE].mem;
+    }
     
-    if (cudaGetLastError() != cudaSuccess) THROW(CUDA_KERNEL_LAUNCH_ERROR);
     cudaDeviceSynchronize();
 
     clock_t end = clock();

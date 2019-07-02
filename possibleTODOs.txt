@@ -1,0 +1,5 @@
+
+Do a 2D CUDAmalloc for device_reduced_block_lengths.
+Don't assume factor of 6 for ensureMemSize(device_reduced_block_lengths)
+
+Remove excessive bounds checks in reduceBlockLengthsStart_kernel.

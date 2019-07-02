@@ -3,8 +3,6 @@
 #include<format.h>
 #include<entropyRLEdecodeGPU.h>
 
-#define LUMINANCE 0
-#define CHROMINANCE 1
 
 template <int num_channel_types>
 __global__ void huffmanDecode_kernel(HuffmanDecode_args args) {

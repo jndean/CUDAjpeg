@@ -1,6 +1,8 @@
 #ifndef ENTROPYRLEDECODEGPU_H
 #define ENTROPYRLEDECODEGPU_H
 
+#define LUMINANCE 0
+#define CHROMINANCE 1
 
 
 typedef struct _HuffmanDecode_args {

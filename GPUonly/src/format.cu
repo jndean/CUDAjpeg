@@ -145,10 +145,6 @@ __host__ int openJPG(JPGReader* reader, const char *filename) {
   fclose(f);
   f=NULL;
   
-  // Start copying input data to GPU //
-  //cudaMemcpy(reader->device_file_buf.mem, reader->file_buf.mem,
-  //	     size, cudaMemcpyHostToDevice);
-
   // Magics //
   if((reader->buf[0]      != 0xFF) || (reader->buf[1]      != 0xD8) ||
      (reader->buf[size-2] != 0xFF) || (reader->buf[size-1] != 0xD9)) {

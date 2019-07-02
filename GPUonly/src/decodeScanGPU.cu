@@ -340,21 +340,23 @@ __host__ void decodeScanGPU(JPGReader* jpg) {
 	for (int sample_y = 0; sample_y < jpg->channels[0].samples_y; ++sample_y)
 	  for (int sample_x = 0; sample_x < jpg->channels[0].samples_x; ++sample_x) {
             int val = tmp_block_lengths[position];
-	    if(val == 0) printf(" - Error at %d -\n", position);
+	    if(val == 0) { printf(" - Error at %d -\n", position);}
 	    position += val;
 	  }
-	for (int sample_y = 0; sample_y < jpg->channels[1].samples_y; ++sample_y)
-	  for (int sample_x = 0; sample_x < jpg->channels[1].samples_x; ++sample_x) {
-	    int val = Ctmp_block_lengths[position]; 
-	    if(val == 0) printf(" - Error at %d -\n", position);
-	    position += val;
-	  }
-	for (int sample_y = 0; sample_y < jpg->channels[2].samples_y; ++sample_y)
-	  for (int sample_x = 0; sample_x < jpg->channels[2].samples_x; ++sample_x) {
-	    int val = Ctmp_block_lengths[position];
-	    if(val == 0) printf(" - Error at %d -\n", position);
-	    position += val;
-	  }
+	if (jpg->num_channels == 3) {
+	  for (int sample_y = 0; sample_y < jpg->channels[1].samples_y; ++sample_y)
+	    for (int sample_x = 0; sample_x < jpg->channels[1].samples_x; ++sample_x) {
+	      int val = Ctmp_block_lengths[position]; 
+	      if(val == 0) { printf(" - Error at %d -\n", position);}
+	      position += val;
+	    }
+	  for (int sample_y = 0; sample_y < jpg->channels[2].samples_y; ++sample_y)
+	    for (int sample_x = 0; sample_x < jpg->channels[2].samples_x; ++sample_x) {
+	      int val = Ctmp_block_lengths[position];
+	      if(val == 0) { printf(" - Error at %d -\n", position);}
+	      position += val;
+	    }
+	}
       }
     }
 

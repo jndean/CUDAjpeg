@@ -25,6 +25,25 @@ typedef struct _DecodeBlockLengths_args {
 template <int num_channel_types>
 __global__ void decodeBlockLengths_kernel(DecodeBlockLengths_args args);
 
+
+typedef struct _ReduceBlockLengthsStart_args {
+  int num_positions;
+  short *lengths_in[2];
+  int *lengths_out;
+} ReduceBlockLengthsStart_args;
+
+template <int num_lum_samples, int num_chrom_samples>
+__global__ void reduceBlockLengthsStart_kernel(ReduceBlockLengthsStart_args args);
+
+typedef struct _ReduceBlockLengthsStep_args {
+  int num_positions;
+  int *lengths_in, *lengths_out;
+} ReduceBlockLengthsStep_args;
+
+template <int num_lum_samples, int num_chrom_samples>
+__global__ void reduceBlockLengthsStep_kernel(ReduceBlockLengthsStep_args args);
+
+
 /*
 typedef struct _ReduceJumpsAC_args {
   int num_positions;

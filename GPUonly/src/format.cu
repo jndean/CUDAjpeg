@@ -114,6 +114,7 @@ __host__ int openJPG(JPGReader* reader, const char *filename) {
   FILE* f = NULL;
   int error_val = NO_ERROR;
   unsigned int size = 0, size8;
+  long long int s;
   
   // Read file //
   f = fopen(filename, "r");
@@ -137,6 +138,16 @@ __host__ int openJPG(JPGReader* reader, const char *filename) {
     if (error_val = ensureMemSize(&reader->device_block_lengths[i], size8, USE_CUDA_MALLOC))
       goto end;
   }
+  
+  s = size;
+  reader->num_reduction_steps = 1; // Require it to be > 0
+  while(s = (s >> 1))
+    reader->num_reduction_steps++;
+  
+  if (error_val = ensureMemSize(&reader->device_reduced_block_lengths,
+				reader->num_reduction_steps * size * 6, USE_CUDA_MALLOC))
+    goto end;
+  
   fseek(f, 0, SEEK_SET);
   if(fread(reader->buf, 1, size, f) != size) {
     error_val = FILE_ERROR;

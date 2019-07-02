@@ -3,7 +3,8 @@
 #include<format.h>
 #include<entropyRLEdecodeGPU.h>
 
-
+#define LUMINANCE 0
+#define CHROMINANCE 1
 
 template <int num_channel_types>
 __global__ void huffmanDecode_kernel(HuffmanDecode_args args) {
@@ -143,6 +144,74 @@ __global__ void decodeBlockLengths_kernel(DecodeBlockLengths_args args) {
 }
 template __global__ void decodeBlockLengths_kernel<1>(DecodeBlockLengths_args args);
 template __global__ void decodeBlockLengths_kernel<2>(DecodeBlockLengths_args args);
+
+
+
+template <int num_lum_samples, int num_chrom_samples>
+__global__ void reduceBlockLengthsStart_kernel(ReduceBlockLengthsStart_args args) {
+
+  // TODO: Could try a version of this where no length validity checks are made,
+  // everything is always summed? Possibly wouldn't be good, since it would
+  // increase writes to save on tiny minimal compute and branching costs
+  
+  int pos = blockIdx.x * blockDim.x + threadIdx.x;
+  if (pos >= args.num_positions) return;
+
+  // We can't know what kind of block is in the current posiiton,
+  // nor what kind of block follows, so we do EVERY possibility.
+
+  // Compute values to be written out//
+  int lumlum_length_out = 0, lumchrom_length_out = 0;
+  int chromchrom_length_out = 0, chromlum_length_out = 0;
+  short length = args.lengths_in[LUMINANCE][pos];
+  int next_pos = pos + length;
+  if (length && (next_pos < args.num_positions)) {
+    // Lum->Lum //
+    short next_lum_length = args.lengths_in[LUMINANCE][next_pos];
+    // TODO: this bound check maybe unnecessary if the length sum doesn't have to have the last block
+    if (next_lum_length && (next_pos + next_lum_length <= args.num_positions)) 
+      lumlum_length_out = length + next_lum_length;
+    // Lum->Chrom //
+    if (num_chrom_samples) {
+      short next_chrom_length = args.lengths_in[CHROMINANCE][next_pos];
+      if (next_chrom_length && (next_pos + next_chrom_length <= args.num_positions)) 
+	lumchrom_length_out = length + next_chrom_length;
+    }
+  }
+
+  if (num_chrom_samples) {
+    length = args.lengths_in[CHROMINANCE][pos];
+    next_pos = pos + length;
+    if (length && (next_pos < args.num_positions)) {
+      // Chrom->Chrom //
+      short next_chrom_length = args.lengths_in[CHROMINANCE][next_pos];
+      if (next_chrom_length && (next_pos + next_chrom_length <= args.num_positions)) 
+	chromchrom_length_out = length + next_chrom_length;
+      // Chrom->Lum //
+      short next_lum_length = args.lengths_in[LUMINANCE][next_pos];
+      if (next_lum_length && (next_pos + next_lum_length <= args.num_positions))
+	chromlum_length_out = length + next_lum_length;
+    }
+  }
+  
+  // Do the writes //
+  __syncwarp(); // Writes should be coalesced, does this actually help guarentee that?
+  int *out_ptr = &args.lengths_out[pos];
+  if (!num_chrom_samples) {
+    // No Chomrinance implies a single Luminance sample per block
+    *out_ptr = lumlum_length_out;
+  } else {
+    for (int i = 0; i < num_lum_samples - 1; i++, out_ptr+=args.num_positions)
+      *out_ptr = lumlum_length_out;
+    *out_ptr = lumchrom_length_out; out_ptr += args.num_positions;
+    *out_ptr = chromchrom_length_out; out_ptr += args.num_positions;
+    *out_ptr = chromlum_length_out; 
+  }  
+}
+template __global__ void reduceBlockLengthsStart_kernel<4,2>(ReduceBlockLengthsStart_args args);
+template __global__ void reduceBlockLengthsStart_kernel<2,2>(ReduceBlockLengthsStart_args args);
+template __global__ void reduceBlockLengthsStart_kernel<1,2>(ReduceBlockLengthsStart_args args);
+template __global__ void reduceBlockLengthsStart_kernel<1,0>(ReduceBlockLengthsStart_args args);
 
 
 /*

@@ -94,7 +94,8 @@ typedef struct _JPGReader
   ManagedShortMem device_values[4], device_jump_lengths[4];
   ManagedUCharMem device_run_lengths[2];
   ManagedShortMem device_block_lengths[2];
-  //ManagedIntMem restart_marker_positions;
+  ManagedIntMem device_reduced_block_lengths;
+  char num_reduction_steps;
   // Debug and error handling //
   clock_t time;
   int error, error_line;

@@ -199,6 +199,24 @@ __host__ void decodeScanGPU(JPGReader* jpg) {
       startreduction_args.lengths_out = jpg->device_reduced_block_lengths.mem;
       startreduction_args.lengths_in[LUMINANCE] = jpg->device_block_lengths[LUMINANCE].mem;
       startreduction_args.lengths_in[CHROMINANCE] = jpg->device_block_lengths[CHROMINANCE].mem;
+      
+      if (jpg->num_channels == 1)
+	reduceBlockLengthsStart_kernel<1, 0><<<num_blocks, threads_per_block>>>(startreduction_args);
+      else {
+	switch (jpg->channels[0].samples_x * jpg->channels[0].samples_y) {
+	case 4:
+	  reduceBlockLengthsStart_kernel<4, 2><<<num_blocks, threads_per_block>>>(startreduction_args);
+	  break;
+	case 2:
+	  reduceBlockLengthsStart_kernel<2, 2><<<num_blocks, threads_per_block>>>(startreduction_args);
+	  break;
+	case 1:
+	  reduceBlockLengthsStart_kernel<1, 2><<<num_blocks, threads_per_block>>>(startreduction_args);
+	  break;
+	default:
+	  THROW(PROGRAMMER_ERROR);
+	}
+      }
     }
     
     cudaDeviceSynchronize();
@@ -347,6 +365,7 @@ __host__ void decodeScanGPU(JPGReader* jpg) {
     cudaMemcpy(Ctmp_block_lengths, jpg->device_block_lengths[1].mem,
 	       num_threads * sizeof(short), cudaMemcpyDeviceToHost);
   
+    
     position = 0;
     for (int block_y = 0; block_y < jpg->num_blocks_y; block_y++) {
       for (int block_x = 0; block_x < jpg->num_blocks_x; block_x++) {
@@ -373,12 +392,46 @@ __host__ void decodeScanGPU(JPGReader* jpg) {
 	}
       }
     }
-
     printf("GPU final position: %d\n", position);
+    
+
+  
+    int* tmp_reduced_lengths = (int*) malloc(num_threads * 6 * sizeof(int));
+    cudaMemcpy(tmp_reduced_lengths, jpg->device_reduced_block_lengths.mem,
+	       num_threads * 6 * sizeof(int), cudaMemcpyDeviceToHost);
+    
+    //printf("lum samples %d\n", jpg->channels[0].samples_x * jpg->channels[0].samples_y);
+    position = 0;
+    for (int j=0; j < 3; j++) {
+      for (i = 0; i < jpg->channels[0].samples_x * jpg->channels[0].samples_y; i++) {
+	printf("lum: %d\n", position);
+	position += tmp_block_lengths[position];
+      }
+      for (i = 0; i < 2; i++) {
+	printf("chrom: %d\n", position);
+	position += Ctmp_block_lengths[position];
+      }
+    }
+    printf("reduced: %d\n", tmp_reduced_lengths[0]);
+    printf("reduced: %d\n", tmp_reduced_lengths[num_threads + 179] + 179);
+    printf("reduced: %d\n", tmp_reduced_lengths[2*num_threads + 333] + 333);
+    printf("reduced: %d\n", tmp_reduced_lengths[3*num_threads + 404] + 404);
+    printf("reduced: %d\n", tmp_reduced_lengths[478] + 478);
+    printf("reduced: %d\n", tmp_reduced_lengths[num_threads + 608] + 608);
+    printf("reduced: %d\n", tmp_reduced_lengths[2*num_threads + 789] + 789);
+    printf("reduced: %d\n", tmp_reduced_lengths[3*num_threads + 842] + 842);
+    printf("reduced: %d\n", tmp_reduced_lengths[893] + 893);
+    printf("reduced: %d\n", tmp_reduced_lengths[num_threads + 1072] + 1072);
+    printf("reduced: %d\n", tmp_reduced_lengths[2*num_threads + 1200] + 1200);
+    printf("reduced: %d\n", tmp_reduced_lengths[3*num_threads + 1252] + 1252);
     
     
     free(tmp_block_lengths);
     free(Ctmp_block_lengths);
+    free(tmp_reduced_lengths);
+
+
+    
 
     tmpval = 0;
     

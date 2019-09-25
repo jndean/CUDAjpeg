@@ -3,7 +3,7 @@
 #include<time.h>
 
 #include<format.h>
-#include<decodeScan.h>
+#include<decodeScanCPU.h>
 
 
 // This only shows the bits, but doesn't move past them //

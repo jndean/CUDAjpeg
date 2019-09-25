@@ -150,7 +150,7 @@ __global__ void reduceBlockLengthsStart_kernel(ReduceBlockLengthsStart_args args
 
   // TODO: Could try a version of this where no length validity checks are made,
   // everything is always summed? Possibly wouldn't be good, since it would
-  // increase writes to save on tiny minimal compute and branching costs
+  // increase the number of writes to save on minimal compute and branching costs
   
   int pos = blockIdx.x * blockDim.x + threadIdx.x;
   if (pos >= args.num_positions) return;

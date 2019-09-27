@@ -212,6 +212,32 @@ template __global__ void reduceBlockLengthsStart_kernel<1,2>(ReduceBlockLengthsS
 template __global__ void reduceBlockLengthsStart_kernel<1,0>(ReduceBlockLengthsStart_args args);
 
 
+
+template <int num_samples>
+__global__ void reduceBlockLengthsStep_kernel(ReduceBlockLengthsStep_args args) {
+
+  int pos = blockIdx.x * blockDim.x + threadIdx.x;
+  if (pos >= args.num_positions) return;
+
+  for (int sample_type = 0; sample_type < num_samples; sample_type++) {
+    int current_pos = sample_type * args.num_positions + pos;
+    int current_length = args.lengths_in[current_pos];
+    int next_pos = pos + current_length;
+    if ((current_length) && (next_pos < args.num_positions)) {
+      int next_sample_type = (sample_type + (1 << args.step)) % num_samples;
+      next_pos += next_sample_type * args.num_positions;    
+      int next_length = args.lengths_in[next_pos];
+      if (next_length)
+	args.lengths_out[current_pos] = next_length + current_length;
+    }
+  }
+}
+template __global__ void reduceBlockLengthsStep_kernel<6>(ReduceBlockLengthsStep_args args);
+template __global__ void reduceBlockLengthsStep_kernel<4>(ReduceBlockLengthsStep_args args);
+template __global__ void reduceBlockLengthsStep_kernel<3>(ReduceBlockLengthsStep_args args);
+template __global__ void reduceBlockLengthsStep_kernel<1>(ReduceBlockLengthsStep_args args);
+
+
 /*
 template <int num_channel_types>
 __global__ void reduceJumpsAC_kernel(ReduceJumpsAC_args args) {

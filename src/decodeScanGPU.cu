@@ -425,7 +425,6 @@ __host__ void decodeScanGPU(JPGReader* jpg) {
     printf("reduced: %d\n", tmp_reduced_lengths[2*num_threads + 1200] + 1200);
     printf("reduced: %d\n", tmp_reduced_lengths[3*num_threads + 1252] + 1252);
     
-    
     free(tmp_block_lengths);
     free(Ctmp_block_lengths);
     free(tmp_reduced_lengths);

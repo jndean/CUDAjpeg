@@ -38,7 +38,7 @@ template <int num_lum_samples, int num_chrom_samples>
 __global__ void reduceBlockLengthsStart_kernel(ReduceBlockLengthsStart_args args);
 
 typedef struct _ReduceBlockLengthsStep_args {
-  int num_positions;
+  int num_positions, step;
   int *lengths_in, *lengths_out;
 } ReduceBlockLengthsStep_args;
 
